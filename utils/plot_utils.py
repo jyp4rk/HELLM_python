@@ -4,9 +4,27 @@ import numpy as np
 import os
 from collections import Counter
 
-MODEL_TITLE_DICT={"llama-2-7b": "LLaMA-2-7B", "mistral-7b": "Mistral-7B", 
+# Color Palette Options - Change COLOR_SCHEME variable below to switch palettes
+COLOR_PALETTES = {
+    'vibrant': ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD"],  # Current - Vibrant Modern
+    'professional': ["#2E86AB", "#A23B72", "#F18F01", "#C73E1D", "#6C464E", "#9B5094"],  # Professional
+    'pastel': ["#FFB6C1", "#87CEEB", "#98FB98", "#F0E68C", "#DDA0DD", "#F4A460"],  # Soft Pastel
+    'dark': ["#E63946", "#F1FAEE", "#A8DADC", "#457B9D", "#1D3557", "#2A9D8F"],  # Dark Theme
+    'nature': ["#264653", "#2A9D8F", "#E9C46A", "#F4A261", "#E76F51", "#606C38"],  # Earth Tones
+    'ocean': ["#006994", "#13A3C4", "#6FD1E7", "#B8E0D2", "#95C623", "#EAF5B5"],  # Ocean Blues
+    'sunset': ["#FF9F1C", "#FFBF69", "#CBF3F0", "#2EC4B6", "#E71D36", "#FF6B35"],  # Warm Sunset
+}
+
+# Change this to switch color schemes: 'vibrant', 'professional', 'pastel', 'dark', 'nature', 'ocean', 'sunset'
+COLOR_SCHEME = 'vibrant'
+
+def get_colors():
+    """Get the current color palette."""
+    return COLOR_PALETTES.get(COLOR_SCHEME, COLOR_PALETTES['vibrant'])
+
+MODEL_TITLE_DICT={"llama-2-7b": "LLaMA-2-7B", "mistral-7b": "Mistral-7B",
         "llama-2-13b-chat": "LLaMA-2-13B-chat", "llama2-70b-chat": "LLaMA-2-70B-chat",
-        "llama-2-7b-chat": "LLaMA-2-7B-chat", "llama-2-13b": "LLaMA-2-13B", "llama-2-70b": "LLaMA-2-70B", 
+        "llama-2-7b-chat": "LLaMA-2-7B-chat", "llama-2-13b": "LLaMA-2-13B", "llama-2-70b": "LLaMA-2-70B",
         "llama-3-8b": "LLaMA-3-8B","llama-3-70b": "LLaMA-3-70B","qwen-2-0.5b": "Qwen-2-0.5B","qwen-2-1.5b": "Qwen-2-1.5B",
         "llama-3-8b-instruct": "LLaMA-3-8B-Instruct","llama-3-70b-instruct": "LLaMA-3-70B-Instruct",
         "qwen-2-7b": "Qwen-2-7B","internlm-2.5-7b":"InternLM-2.5-7B", "phi-3-medium-instruct":"Phi-3-Medium-Instruct",
@@ -20,9 +38,9 @@ def plot_3D_tensor(layer_name, tensor, name):
     X = np.arange(tensor.shape[1])
     Y = np.arange(tensor.shape[0])
     X, Y = np.meshgrid(X, Y)
-    ax.plot_surface(X, Y,  tensor.cpu(), cmap='coolwarm', antialiased=False, shade=True, linewidth=0.5,rstride=1,cstride=1)
+    ax.plot_surface(X, Y,  tensor.cpu(), cmap='viridis', antialiased=False, shade=True, linewidth=0.5,rstride=1,cstride=1)
     plt.tight_layout()
-    
+
     ax.set_xlabel('Channel', fontsize=14)
     ax.set_ylabel('Token', fontsize=14)
     ax.tick_params(axis='x', labelsize=13)
@@ -36,16 +54,16 @@ def plot_3D_tensor(layer_name, tensor, name):
     plt.close()
 
 def plot_layer_ax_input_sub(ax, mean, model_name, layer_name, show_ylabel=True):
-    colors = ["cornflowerblue", "mediumseagreen", "C4", "teal",  "dimgrey", "gold"]
+    colors = get_colors()
 
     x_axis = np.arange(mean.shape[-1])+1
     for i in range(3):
-        ax.plot(x_axis, mean[i], label=f"Top-{i+1}", color=colors[i], 
+        ax.plot(x_axis, mean[i], label=f"Top-{i+1}", color=colors[i],
                      linestyle="-",  marker="o", markerfacecolor='none', markersize=5)
 
-    ax.plot(x_axis, mean[-2], label=f"Median", color=colors[-2], 
+    ax.plot(x_axis, mean[-2], label=f"Median", color=colors[-2],
                      linestyle="-",  marker="v", markerfacecolor='none', markersize=5)
-    ax.plot(x_axis, mean[-1], label=f"Min-1", color=colors[-1], 
+    ax.plot(x_axis, mean[-1], label=f"Min-1", color=colors[-1],
                      linestyle="-",  marker="o", markerfacecolor='none', markersize=5)
 
     if layer_name == 'q_proj':
@@ -65,30 +83,31 @@ def plot_layer_ax_input_sub(ax, mean, model_name, layer_name, show_ylabel=True):
     ax.yaxis.set_tick_params(labelsize=22)
     ax.yaxis.set_ticklabels(ax.get_yticklabels(), fontweight='bold')
     ax.grid(axis='x', color='0.75')
-    ratio1 = (mean[0]/mean[-2]).max() # top-1/median
-    if ratio1>10:
-        color1 = 'red'
-    else:
-        color1 = 'green'
-    ratio2 = (mean[-2]/mean[-1]).max() # median/min-1
-    if ratio2>10:
-        color2 = 'red'
-    else:
-        color2 = 'green'
-    if ratio1>100:
-        text1 = rf"max($\frac{{\text{{top-1}}}}{{\text{{median}}}}$)={ratio1:.0f} "
-    else:
-        text1 = rf"max($\frac{{\text{{top-1}}}}{{\text{{median}}}}$)={ratio1:.1f} "
-    if ratio2 > 100:
-        text2 = rf"max($\frac{{\text{{median}}}}{{\text{{min-1}}}}$)={ratio2:.0f}"
-    else:
-        text2 = rf"max($\frac{{\text{{median}}}}{{\text{{min-1}}}}$)={ratio2:.1f}"
-    char_width = 0.019
-    text1_length = len(text1) * char_width
-    ax.text(0.5 - text1_length / 2 - char_width, 0.93, text1, 
-            va='center', ha='left', fontsize=22, fontweight='bold', transform=ax.transAxes, color=color1)
-    ax.text(0.5 + char_width, 0.93, text2, 
-            va='center', ha='left', fontsize=22, fontweight='bold', transform=ax.transAxes, color=color2)
+    # Temporarily disabled ratio calculations and text plotting
+    # ratio1 = (mean[0]/mean[-2]).max() # top-1/median
+    # if ratio1>10:
+    #     color1 = 'red'
+    # else:
+    #     color1 = 'green'
+    # ratio2 = (mean[-2]/mean[-1]).max() # median/min-1
+    # if ratio2>10:
+    #     color2 = 'red'
+    # else:
+    #     color2 = 'green'
+    # if ratio1>100:
+    #     text1 = rf"max($\frac{{\text{{top-1}}}}{{\text{{median}}}}$)={ratio1:.0f} "
+    # else:
+    #     text1 = rf"max($\frac{{\text{{top-1}}}}{{\text{{median}}}}$)={ratio1:.1f} "
+    # if ratio2 > 100:
+    #     text2 = rf"max($\frac{{\text{{median}}}}{{\text{{min-1}}}}$)={ratio2:.0f}"
+    # else:
+    #     text2 = rf"max($\frac{{\text{{median}}}}{{\text{{min-1}}}}$)={ratio2:.1f}"
+    # char_width = 0.019
+    # text1_length = len(text1) * char_width
+    # ax.text(0.5 - text1_length / 2 - char_width, 0.93, text1,
+    #         va='center', ha='left', fontsize=22, fontweight='bold', transform=ax.transAxes, color=color1)
+    # ax.text(0.5 + char_width, 0.93, text2,
+    #         va='center', ha='left', fontsize=22, fontweight='bold', transform=ax.transAxes, color=color2)
     y_min, y_max = ax.get_ylim()
     ax.set_ylim(y_min, y_max + (y_max-y_min)*0.1)
 
@@ -96,12 +115,12 @@ def plot_layer_ax_input(obj, model_name, savedir, layer_name, show_legend=True):
     fig, axs = plt.subplots(nrows=1, ncols=1, figsize=(7.5, 4.5))
     fig.tight_layout() # Or equivalently,  "plt.tight_layout()"
     plt.subplots_adjust(wspace=0.13)
-    mean = np.mean(obj,axis=0)
+    mean = np.max(obj,axis=0)
     plot_layer_ax_input_sub(axs, mean, model_name, layer_name)
     if show_legend:
         leg = axs.legend(
             loc='center', bbox_to_anchor=(0.5, -0.10),
-            ncol=5, fancybox=True, prop={'size': 14}
+            ncol=4, fancybox=True, prop={'size': 14}
         )
         leg.get_frame().set_edgecolor('silver')
         leg.get_frame().set_linewidth(1.0)
@@ -114,31 +133,31 @@ def plot_combined_layer_ax_input(objs, model_name, savedir, layer_names, show_le
     all_handles_labels = []
     for index, (ax, stat, layer_name) in enumerate(zip(axs.flatten(), objs, layer_names)):
         show_ylabel = index==0
-        mean = np.mean(stat, axis=0)
+        mean = np.max(stat, axis=0)
         plot_layer_ax_input_sub(ax, mean, model_name, layer_name, show_ylabel)
         handles, labels = ax.get_legend_handles_labels()
         all_handles_labels.append((handles, labels))
 
     handles, labels = all_handles_labels[0]
     if show_legend:
-        fig.legend(handles, labels, loc='upper center', ncol=5, fancybox=True, prop={'size': 22}, bbox_to_anchor=(0.5, 1.23))
+        fig.legend(handles, labels, loc='upper center', ncol=4, fancybox=True, prop={'size': 22}, bbox_to_anchor=(0.5, 1.23))
 
     plt.savefig(os.path.join(savedir, f"{model_name}-combined.png"), bbox_inches="tight", dpi=600)
     plt.savefig(os.path.join(savedir, f"{model_name}-combined.pdf"), bbox_inches="tight", dpi=600)
     plt.close(fig)
-    
+
 def plot_layer_ax_output_sub(ax, mean, model_name, layer_name, show_ylabel=True):
-    colors = ["cornflowerblue", "mediumseagreen", "C4", "teal",  "dimgrey", "gold"]
+    colors = get_colors()
 
     x_axis = np.arange(mean.shape[-1])+1
-    
-    ax.plot(x_axis, mean[-1], label=f"Top-1", color=colors[-1], 
-                     linestyle="-",  marker="o", markerfacecolor='none', markersize=5)
-    ax.plot(x_axis, mean[-2], label=f"Median", color=colors[-2], 
-                     linestyle="-",  marker="v", markerfacecolor='none', markersize=5)
+
+    # Plot top-1, top-2, top-3 (indices 4, 5, 6) and median (index 3)
     for i in range(3):
-        ax.plot(x_axis, mean[i], label=f"Min-{i+1}", color=colors[i], 
+        ax.plot(x_axis, mean[4+i], label=f"Top-{i+1}", color=colors[i], 
                      linestyle="-",  marker="o", markerfacecolor='none', markersize=5)
+    
+    ax.plot(x_axis, mean[3], label=f"Median", color=colors[3], 
+                     linestyle="-",  marker="v", markerfacecolor='none', markersize=5)
 
 
     if layer_name == 'q_proj' or layer_name == 'apply_rotary_pos_emb_qk_rotation_wrapper.Q':
@@ -147,7 +166,13 @@ def plot_layer_ax_output_sub(ax, mean, model_name, layer_name, show_ylabel=True)
         layer_name = 'K'
     elif layer_name == 'v_proj':
         layer_name = 'V'
-        
+    elif layer_name == 'down_proj':
+        layer_name = 'down_proj'
+    elif layer_name == 'up_proj':
+        layer_name = 'up/gate_proj'
+    elif layer_name == 'o_proj':
+        layer_name = 'o_proj'
+
     title = f'{MODEL_TITLE_DICT[model_name]} {layer_name}'
     ax.set_title(title, fontsize=22, fontweight="bold")
 
@@ -160,24 +185,25 @@ def plot_layer_ax_output_sub(ax, mean, model_name, layer_name, show_ylabel=True)
     ax.yaxis.set_tick_params(labelsize=22)
     ax.yaxis.set_ticklabels(ax.get_yticklabels(), fontweight='bold')
     ax.grid(axis='x', color='0.75')
-    ratio1 = (mean[-1]/mean[-2]).max() # top-1/median
-    if ratio1>5:
-        color1 = 'red'
-    else:
-        color1 = 'green'
-    ratio2 = (mean[-2]/mean[0]).max() # median/min-1
-    if ratio2>5:
-        color2 = 'red'
-    else:
-        color2 = 'green'
-    text1 = rf"max($\frac{{\text{{top-1}}}}{{\text{{median}}}}$)={ratio1:.1f} "
-    text2 = rf"max($\frac{{\text{{median}}}}{{\text{{min-1}}}}$)={ratio2:.1f}"
-    char_width = 0.019
-    text1_length = len(text1) * char_width
-    ax.text(0.5 - text1_length / 2 - char_width, 0.93, text1, 
-            va='center', ha='left', fontsize=22, fontweight='bold', transform=ax.transAxes, color=color1)
-    ax.text(0.5 + char_width, 0.93, text2, 
-            va='center', ha='left', fontsize=22, fontweight='bold', transform=ax.transAxes, color=color2)
+    # Temporarily disabled ratio calculations and text plotting
+    # ratio1 = (mean[-1]/mean[-2]).max() # top-1/median
+    # if ratio1>5:
+    #     color1 = 'red'
+    # else:
+    #     color1 = 'green'
+    # ratio2 = (mean[-2]/mean[0]).max() # median/min-1
+    # if ratio2>5:
+    #     color2 = 'red'
+    # else:
+    #     color2 = 'green'
+    # text1 = rf"max($\frac{{\text{{top-1}}}}{{\text{{median}}}}$)={ratio1:.1f} "
+    # text2 = rf"max($\frac{{\text{{median}}}}{{\text{{min-1}}}}$)={ratio2:.1f}"
+    # char_width = 0.019
+    # text1_length = len(text1) * char_width
+    # ax.text(0.5 - text1_length / 2 - char_width, 0.93, text1,
+    #         va='center', ha='left', fontsize=22, fontweight='bold', transform=ax.transAxes, color=color1)
+    # ax.text(0.5 + char_width, 0.93, text2,
+    #         va='center', ha='left', fontsize=22, fontweight='bold', transform=ax.transAxes, color=color2)
     y_min, y_max = ax.get_ylim()
     ax.set_ylim(y_min, y_max + (y_max-y_min)*0.1)
 
@@ -185,44 +211,46 @@ def plot_layer_ax_output(obj, model_name, savedir, layer_name, show_legend=True)
     fig, axs = plt.subplots(nrows=1, ncols=1, figsize=(7.5, 4.5))
     fig.tight_layout() # Or equivalently,  "plt.tight_layout()"
     plt.subplots_adjust(wspace=0.13)
-    mean = np.mean(obj,axis=0)
+    mean = np.max(obj,axis=0)
     plot_layer_ax_output_sub(axs, mean, model_name, layer_name)
     if show_legend:
         leg = axs.legend(
             loc='center', bbox_to_anchor=(0.5, -0.10),
-            ncol=5, fancybox=True, prop={'size': 14}
+            ncol=4, fancybox=True, prop={'size': 14}
         )
         leg.get_frame().set_edgecolor('silver')
         leg.get_frame().set_linewidth(1.0)
     plt.savefig(os.path.join(savedir,f"{model_name}-{layer_name}.png"), bbox_inches="tight", dpi=600)
 
 def plot_combined_layer_ax_output(objs, model_name, savedir, layer_names, show_legend=True):
-    fig, axs = plt.subplots(nrows=1, ncols=len(layer_names), figsize=(21, 4.5))
+    # Adjust figure width based on number of layers (3.5 * num_layers for proper spacing)
+    fig_width = 3.5 * len(layer_names)
+    fig, axs = plt.subplots(nrows=1, ncols=len(layer_names), figsize=(fig_width, 4.5))
     fig.tight_layout() # Or equivalently,  "plt.tight_layout()"
     plt.subplots_adjust(wspace=0.13)
     all_handles_labels = []
     for index, (ax, stat, layer_name) in enumerate(zip(axs.flatten(), objs, layer_names)):
         show_ylabel = index==0
-        mean = np.mean(stat, axis=0)
+        mean = np.max(stat, axis=0)
         plot_layer_ax_output_sub(ax, mean, model_name, layer_name, show_ylabel)
         handles, labels = ax.get_legend_handles_labels()
         all_handles_labels.append((handles, labels))
 
     handles, labels = all_handles_labels[0]
     if show_legend:
-        fig.legend(handles, labels, loc='upper center', ncol=5, fancybox=True, prop={'size': 22}, bbox_to_anchor=(0.5, 1.23))    
+        fig.legend(handles, labels, loc='upper center', ncol=4, fancybox=True, prop={'size': 22}, bbox_to_anchor=(0.5, 1.23))
 
     plt.savefig(os.path.join(savedir,f"{model_name}-combined.png"), bbox_inches="tight", dpi=600)
     plt.savefig(os.path.join(savedir,f"{model_name}-combined.pdf"), bbox_inches="tight", dpi=600)
 
 def plot_layer_outlier_token_num_sub(ax, mean, model_name):
-    colors = ["cornflowerblue", "mediumseagreen", "C4", "teal",  "dimgrey", "gold"]
+    colors = get_colors()
 
     x_axis = np.arange(mean.shape[-1])+1
 
-    ax.plot(x_axis, mean[0], color=colors[0], 
+    ax.plot(x_axis, mean[0], color=colors[0],
                      linestyle="-",  marker="o", markerfacecolor='none', markersize=5)
-    # ax.plot(x_axis, mean[0], label=f"# of outlier token", color=colors[0], 
+    # ax.plot(x_axis, mean[0], label=f"# of outlier token", color=colors[0],
     #                  linestyle="-",  marker="o", markerfacecolor='none', markersize=5)
 
     ax.set_title(MODEL_TITLE_DICT[model_name], fontsize=16, fontweight="bold")
@@ -239,19 +267,19 @@ def plot_layer_outlier_token_num_sub(ax, mean, model_name):
     plt.yticks(fontsize=16)
     ax.grid(axis='x', color='0.75')
 
-    
+
 def plot_layer_outlier_token_num(obj, model_name, savedir):
     fig, axs = plt.subplots(nrows=1, ncols=1, figsize=(7.5, 4.5))
     fig.tight_layout() # Or equivalently,  "plt.tight_layout()"
     plt.subplots_adjust(wspace=0.13)
 
-    mean = np.mean(obj,axis=0)
+    mean = np.max(obj,axis=0)
     plot_layer_outlier_token_num_sub(axs, mean, model_name)
 
     plt.savefig(os.path.join(savedir,f"{model_name}.png"), bbox_inches="tight", dpi=200)
-    
+
 def plot_outlier_token_position_sub(ax, labels, values, model_name):
-    colors = ["cornflowerblue", "mediumseagreen", "C4", "teal",  "dimgrey", "gold"]
+    colors = get_colors()
 
     bars = ax.bar(labels, values, color=colors[0])
     ax.set_title(MODEL_TITLE_DICT[model_name], fontsize=20, fontweight="bold")
@@ -270,7 +298,7 @@ def plot_outlier_token_position_sub(ax, labels, values, model_name):
     ax.set_ylim(0, max(values) * 1.13)
 
 def plot_outlier_token_number_sub(ax, labels, values, model_name):
-    colors = ["cornflowerblue", "mediumseagreen", "C4", "teal",  "dimgrey", "gold"]
+    colors = get_colors()
 
     bars = ax.bar(labels, values, color=colors[0])
     ax.set_title(MODEL_TITLE_DICT[model_name], fontsize=20, fontweight="bold")
@@ -287,7 +315,7 @@ def plot_outlier_token_number_sub(ax, labels, values, model_name):
     plt.xticks(fontsize=20, fontweight="bold")
     plt.yticks(fontsize=20)
     ax.set_ylim(0, max(values) * 1.13)
-    
+
 def plot_outlier_token_position(obj, model_name, savedir):
     fig, axs = plt.subplots(nrows=1, ncols=1, figsize=(7.5, 4.5))
     fig.tight_layout() # Or equivalently,  "plt.tight_layout()"
@@ -301,7 +329,7 @@ def plot_outlier_token_position(obj, model_name, savedir):
     labels = list(sorted_percentages.keys())
     labels = [str(k) for k in sorted_percentages.keys()]
     values = list(sorted_percentages.values())
-    
+
     plot_outlier_token_position_sub(axs, labels, values, model_name)
     plt.savefig(os.path.join(savedir,f"{model_name}.png"), bbox_inches="tight", dpi=200)
     plt.savefig(os.path.join(savedir,f"{model_name}.pdf"), bbox_inches="tight", dpi=200)
@@ -319,13 +347,13 @@ def plot_outlier_token_number(obj, model_name, savedir):
     labels = list(sorted_percentages.keys())
     labels = [str(k) for k in sorted_percentages.keys()]
     values = list(sorted_percentages.values())
-    
+
     plot_outlier_token_number_sub(axs, labels, values, model_name)
     plt.savefig(os.path.join(savedir,f"{model_name}.png"), bbox_inches="tight", dpi=200)
     plt.savefig(os.path.join(savedir,f"{model_name}.pdf"), bbox_inches="tight", dpi=200)
 
 def plot_outlier_token_sub(ax, labels, values, model_name):
-    colors = ["cornflowerblue", "mediumseagreen", "C4", "teal",  "dimgrey", "gold"]
+    colors = get_colors()
 
     bars = ax.bar(labels, values, color=colors[0])
     ax.set_title(MODEL_TITLE_DICT[model_name], fontsize=20, fontweight="bold")
@@ -342,7 +370,7 @@ def plot_outlier_token_sub(ax, labels, values, model_name):
     plt.xticks(fontsize=20, fontweight="bold")
     plt.yticks(fontsize=20)
     ax.set_ylim(0, max(values) * 1.13)
-    
+
 def plot_outlier_token(obj, model_name, savedir):
     fig, axs = plt.subplots(nrows=1, ncols=1, figsize=(7.5, 4.5))
     fig.tight_layout() # Or equivalently,  "plt.tight_layout()"
@@ -356,7 +384,7 @@ def plot_outlier_token(obj, model_name, savedir):
     labels = list(sorted_percentages.keys())
     labels = [str(k) for k in sorted_percentages.keys()]
     values = list(sorted_percentages.values())
-    
+
     plot_outlier_token_sub(axs, labels, values, model_name)
     plt.savefig(os.path.join(savedir,f"{model_name}.png"), bbox_inches="tight", dpi=200)
     plt.savefig(os.path.join(savedir,f"{model_name}.pdf"), bbox_inches="tight", dpi=200)
@@ -374,6 +402,6 @@ def plot_outlier_token_test(obj, model_name, savedir):
     labels = list(sorted_percentages.keys())
     labels = [str(k) for k in sorted_percentages.keys()]
     values = list(sorted_percentages.values())
-    
+
     plot_outlier_token_sub(axs, labels, values, model_name)
     plt.savefig(os.path.join(savedir,f"{model_name}_test.png"), bbox_inches="tight", dpi=200)

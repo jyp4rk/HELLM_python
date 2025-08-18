@@ -31,7 +31,7 @@ def stat_layer_wise_magnitude_input(dataloader, activation_dict, model, layer_na
             elif layer_name == 'o_proj':
                 entire_name = f'model.layers.{block_index}.self_attn.o_proj'
             else:
-                raise NotImplementedError
+                raise NotImplementedError(f"Layer name '{layer_name}' not supported")
             activation_abs = activation_dict[entire_name].abs()
             activation_abs = activation_abs.max(dim=-1).values
             sort_res = torch.sort(activation_abs.flatten(), descending=True)
@@ -41,12 +41,41 @@ def stat_layer_wise_magnitude_input(dataloader, activation_dict, model, layer_na
         stats.append(seq_np)
     return stats
 
+def get_stat_indices():
+    '''
+    Helper function to get indices for different statistics in the output array.
+
+    Returns:
+        dict: Dictionary mapping statistic names to their row indices
+    '''
+    return {
+        'min_1': 0,
+        'min_2': 1,
+        'min_3': 2,
+        'median': 3,
+        'top_1': 4,
+        'top_2': 5,
+        'top_3': 6,
+        'top_4': 7,
+        'top_5': 8,
+        'top_6': 9,
+        'top_7': 10,
+        'top_8': 11,
+        'top_9': 12,
+        'top_10': 13
+    }
+
 @torch.no_grad()
 def stat_layer_wise_magnitude_output(dataloader, activation_dict, model, layer_name,prefixed_tokens):
     '''
-    min-1/2/3
-    median
-    top-1
+    Compute layer-wise statistics of output activation magnitudes.
+
+    Returns array with shape (14, num_layers) containing:
+    - Rows 0-2: min 1, min 2, min 3 values
+    - Row 3: median value
+    - Rows 4-13: top 1 through top 10 values
+
+    Use get_stat_indices() to access specific statistics by name.
     '''
     stats = []
     data_num = len(dataloader)
@@ -57,7 +86,7 @@ def stat_layer_wise_magnitude_output(dataloader, activation_dict, model, layer_n
         with torch.no_grad():
             model(data.to('cuda'))
         num_layers = len(model.model.layers)
-        seq_np = np.zeros((5, num_layers))
+        seq_np = np.zeros((14, num_layers))  # Changed from 5 to 14 rows (3 min + 1 median + 10 top values)
         for block_index in range(num_layers):
             if layer_name == 'hidden_state':
                 entire_name = f'model.layers.{block_index}'
@@ -76,13 +105,18 @@ def stat_layer_wise_magnitude_output(dataloader, activation_dict, model, layer_n
             elif 'apply_rotary_pos_emb_qk_rotation_wrapper' in layer_name:
                 entire_name = f'model.layers.{block_index}.self_attn.{layer_name}'
             else:
-                raise NotImplementedError
+                raise NotImplementedError(f"Layer name '{layer_name}' not supported")
             activation_abs = activation_dict[entire_name].abs()
             activation_abs = activation_abs.max(dim=-1).values
             sort_res = torch.sort(activation_abs.flatten(), descending=False)
             seq_np[:3, block_index] = sort_res.values[:3].cpu() # min 1, min 2, min 3
             seq_np[3, block_index] = torch.median(activation_abs).cpu() # median
-            seq_np[4, block_index] = torch.max(activation_abs).cpu() # maximum
+
+            # Get top 10 values (sorted in descending order)
+            sort_res_desc = torch.sort(activation_abs.flatten(), descending=True)
+            # Store top 1 through top 10 values
+            top_k = min(10, len(sort_res_desc.values))  # Handle case where we have fewer than 10 values
+            seq_np[4:4+top_k, block_index] = sort_res_desc.values[:top_k].cpu()
         stats.append(seq_np)
     return stats
 
@@ -118,7 +152,7 @@ def stat_outlier_token_number(dataloader, output_activation, model, outlier_thre
     stats = np.max(stats, axis=1) # sequence-wise outlier-token number
     return stats.astype(int)
 
-        
+
 def stat_outlier_token_position(dataloader, output_activation, model, prefixed_tokens=None, outlier_threshold=20, outlier_object='hidden_state'):
     stats = []
     data_num = len(dataloader)
@@ -144,7 +178,7 @@ def stat_outlier_token_position(dataloader, output_activation, model, prefixed_t
             if num > 0:
                 stats += sort_res.indices[:num].tolist()
     return stats
-    
+
 
 def stat_outlier_token(dataloader, output_activation, model, tokenizer=None, decode=False, outlier_threshold=20, outlier_object='hidden_state'):
     stats = []
@@ -169,18 +203,18 @@ def stat_outlier_token(dataloader, output_activation, model, tokenizer=None, dec
             if num > 0:
                 selected_token_indexs = sort_res.indices[:num]
                 for token_index in selected_token_indexs:
-                    if token_index == 0: 
+                    if token_index == 0:
                         continue
                     else:
                         if decode:
                             content = tokenizer.decode(data[0][token_index])
                             if content =='\n':
-                                content = '\\n'  
+                                content = '\\n'
                             stats.append(f"'{content}'")
                         else:
                             stats.append(data[0][token_index].item())
     return stats
-    
+
 
 def get_activation_hook_2(layer_name, activation_dict, is_input=True):
     def hook(model, input, output):
@@ -241,7 +275,7 @@ def get_prefixed_tokens(dataloader, model, tokenizer, model_name, outlier_thresh
         target_class = (torch.nn.Linear, QuantLinear)
     else:
         raise NotImplementedError
-    
+
     hooks = []
     for name, layer in model.named_modules():
         if isinstance(layer, target_class):
@@ -284,7 +318,7 @@ def get_input_modify_hook(modified_index, prefixed_tokens_num=0):
         input_max = input[:, prefixed_tokens_num:].abs().max(dim=-1)
         input_max_sort =  torch.sort(input_max.values.flatten(), descending=True)
         outlier_threshold_value = input_max_sort.values[9]
-        
+
         ratio = input_max_sort.values / outlier_threshold_value
         outlier_num = (ratio > 20).sum()
 
@@ -299,7 +333,7 @@ def get_input_modify_hook(modified_index, prefixed_tokens_num=0):
             print(input_max_sort.values[:10])
             print(sorted_indice)
 
-            
+
         return input
     return hook
 

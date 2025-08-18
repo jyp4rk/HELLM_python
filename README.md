@@ -1,5 +1,5 @@
 # PrefixQuant
-Official PyTorch implement for [PrefixQuant: Eliminating Outliers by Prefixed Tokens for Large Language Models Quantization](https://arxiv.org/abs/2410.05265). 
+Official PyTorch implement for [PrefixQuant: Eliminating Outliers by Prefixed Tokens for Large Language Models Quantization](https://arxiv.org/abs/2410.05265).
 
 
 
@@ -51,8 +51,8 @@ CUDA_VISIBLE_DEVICES=0 python main.py \
 ```
 You can find the detailed fine-tuning setting in the paper. There are some useful information as follows:
 - For dynamic quantization, you should add `--activation_clipping` to enhance the perfomance.
-- You can add `--epochs 20` to introduce fine-tuning for W4A4KV4 quantization, and `--epochs 10` for W4A8KV4 quantization. 
-- For Llama-3-70B(-Instruct) models, you should change the default learning rate to `--quant_lr 2e-5 --weight_lr 2e-6`. 
+- You can add `--epochs 20` to introduce fine-tuning for W4A4KV4 quantization, and `--epochs 10` for W4A8KV4 quantization.
+- For Llama-3-70B(-Instruct) models, you should change the default learning rate to `--quant_lr 2e-5 --weight_lr 2e-6`.
 - For Llama-2-70B, you should set `--loss_type skip_mse` for the training stability.
 
 ## Inference
@@ -66,11 +66,12 @@ CUDA_VISIBLE_DEVICES=0 python eval.py \
 
 ## Plot Activation Distribution
 We provide an example command to visualize token-wsie maximum values for linear inputs:
-```
 CUDA_VISIBLE_DEVICES=0 python plot_activation.py \
---model_path path/to/llama-2-7b \
+--model_path /scale/cal/home/jypark/models--meta-llama--Llama-2-7b-hf/snapshots/ 01c7f73d771dfac7d292323805ebc428287df4f9 \
 --model_name llama-2-7b \
 --plot_linear_input
+```
+
 ```
 You can add `--pre_rotate --down_online_had --qk_online_had` to apply hadamard rotation, and add `--set_prefixed_tokens` to set the proposed prefixed tokens in our paper.
 Additionally, you can also change `--plot_linear_input` to other plotting choices, details are as follows:

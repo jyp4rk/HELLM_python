@@ -19,8 +19,8 @@ class NoisyLinear(nn.Linear):
         R1: Optional[Tensor] = None,
         R2: Optional[Tensor] = None,
         transpose: bool = False,
-        frac_bitwidth: int = 20,
         noise_config=None,
+        # frac_bitwidth: int = 20,
     ) -> Tensor:
         # quantize weight
         if R1 is not None:
@@ -66,7 +66,7 @@ class NoisyLinear(nn.Linear):
         input_int = input.floor()
         input_frac = input - input_int
 
-        scale = 2 ** frac_bitwidth
+        scale = 2 ** noise_config.get("fractional_bitwidth", 27)  # Default to 27 if not specified
         weight_frac_scaled = torch.round(weight_frac * scale)
         input_frac_scaled = torch.round(input_frac * scale)
 
@@ -84,7 +84,9 @@ class NoisyLinear(nn.Linear):
         dim = input.shape[-1]
 
         if noise_config is not None:
-            rescale_error = torch.randn_like(output) * noise_config.get("sqrt_Nh") / noise_config.get("delta")
+            # Calculate delta from delta_bitwidth if needed
+            delta = noise_config.get("delta", 2 ** noise_config.get("delta_bitwidth", 42))
+            rescale_error = torch.randn_like(output) * noise_config.get("sqrt_Nh") / delta
 
             ## currently we ignore keyswitch_error
             keyswitch_error = torch.zeros_like(output)

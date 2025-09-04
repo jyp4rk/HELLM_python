@@ -348,8 +348,13 @@ class LlamaMLP(nn.Module):
         #     down_proj = sum(down_proj)
         # else:
         # Get intermediate activations
-        gate_out = self.act_fn(self.gate_proj(x, R1))
-        up_out = self.up_proj(x, R1)
+        # Check if linear noise config is available
+        noise_config = getattr(self, 'linear_noise_config', None)
+        if not noise_config:
+            raise AttributeError("Linear noise config not found in LlamaMLP")
+
+        gate_out = self.act_fn(self.gate_proj(x, R1, noise_config=noise_config))
+        up_out = self.up_proj(x, R1, noise_config=noise_config)
 
         # Apply activation noise injection after SiLU/Swish activation
         if hasattr(self, "inject_activation_noise") and self.inject_activation_noise:
@@ -361,6 +366,7 @@ class LlamaMLP(nn.Module):
             gate_out * up_out,
             R1,
             transpose=True,
+            noise_config=noise_config
         )
 
         # Track R1 outliers after down projection (pre-residual)
@@ -481,9 +487,14 @@ class LlamaAttention(nn.Module):
         #     value_states = torch.cat(value_states, dim=-1)
 
         # else:
-        query_states = self.q_proj(hidden_states, R1)
-        key_states = self.k_proj(hidden_states, R1)
-        value_states = self.v_proj(hidden_states, R1, R2=self.R2.weight)
+        # Check if linear noise config is available
+        noise_config = getattr(self, 'linear_noise_config', None)
+        if not noise_config and hasattr(self, '_model_ref'):
+            noise_config = getattr(self._model_ref, 'linear_noise_config', None)
+
+        query_states = self.q_proj(hidden_states, R1, noise_config=noise_config)
+        key_states = self.k_proj(hidden_states, R1, noise_config=noise_config)
+        value_states = self.v_proj(hidden_states, R1, R2=self.R2.weight, noise_config=noise_config)
 
         # Track R2 outliers after value projection
         if hasattr(self, '_track_layer_outliers') and self._track_layer_outliers:
@@ -574,7 +585,7 @@ class LlamaAttention(nn.Module):
         #         ]
         #     )
         # else:
-        attn_output = self.o_proj(attn_output, R1, R2=self.R2.weight, transpose=True)
+        attn_output = self.o_proj(attn_output, R1, R2=self.R2.weight, transpose=True, noise_config=noise_config)
 
         # Track R1 outliers after output projection (pre-residual)
         if hasattr(self, '_track_layer_outliers') and self._track_layer_outliers:
@@ -629,9 +640,14 @@ class LlamaFlashAttention2(LlamaAttention):
 
         bsz, q_len, _ = hidden_states.size()
 
-        query_states = self.q_proj(hidden_states, R1)
-        key_states = self.k_proj(hidden_states, R1)
-        value_states = self.v_proj(hidden_states, R1, R2=self.R2.weight)
+        # Check if linear noise config is available
+        noise_config = getattr(self, 'linear_noise_config', None)
+        if not noise_config and hasattr(self, '_model_ref'):
+            noise_config = getattr(self._model_ref, 'linear_noise_config', None)
+
+        query_states = self.q_proj(hidden_states, R1, noise_config=noise_config)
+        key_states = self.k_proj(hidden_states, R1, noise_config=noise_config)
+        value_states = self.v_proj(hidden_states, R1, R2=self.R2.weight, noise_config=noise_config)
 
         # Track R2 outliers after value projection (Flash Attention)
         if hasattr(self, '_track_layer_outliers') and self._track_layer_outliers:
@@ -723,7 +739,7 @@ class LlamaFlashAttention2(LlamaAttention):
         )
 
         attn_output = attn_output.reshape(bsz, q_len, -1).contiguous()
-        attn_output = self.o_proj(attn_output, R1, R2=self.R2.weight, transpose=True)
+        attn_output = self.o_proj(attn_output, R1, R2=self.R2.weight, transpose=True, noise_config=noise_config)
 
         # Track R1 outliers after output projection (pre-residual, Flash Attention)
         if hasattr(self, '_track_layer_outliers') and self._track_layer_outliers:
@@ -781,9 +797,14 @@ class LlamaSdpaAttention(LlamaAttention):
 
         bsz, q_len, _ = hidden_states.size()
 
-        query_states = self.q_proj(hidden_states, R1)
-        key_states = self.k_proj(hidden_states, R1)
-        value_states = self.v_proj(hidden_states, R1, R2=self.R2.weight)
+        # Check if linear noise config is available
+        noise_config = getattr(self, 'linear_noise_config', None)
+        if not noise_config and hasattr(self, '_model_ref'):
+            noise_config = getattr(self._model_ref, 'linear_noise_config', None)
+
+        query_states = self.q_proj(hidden_states, R1, noise_config=noise_config)
+        key_states = self.k_proj(hidden_states, R1, noise_config=noise_config)
+        value_states = self.v_proj(hidden_states, R1, R2=self.R2.weight, noise_config=noise_config)
 
         # Track R2 outliers after value projection (SDPA Attention)
         if hasattr(self, '_track_layer_outliers') and self._track_layer_outliers:
@@ -854,7 +875,7 @@ class LlamaSdpaAttention(LlamaAttention):
         attn_output = attn_output.transpose(1, 2).contiguous()
         attn_output = attn_output.view(bsz, q_len, -1)
 
-        attn_output = self.o_proj(attn_output, R1, R2=self.R2.weight, transpose=True)
+        attn_output = self.o_proj(attn_output, R1, R2=self.R2.weight, transpose=True, noise_config=noise_config)
 
         # Track R1 outliers after output projection (pre-residual, SDPA Attention)
         if hasattr(self, '_track_layer_outliers') and self._track_layer_outliers:
@@ -1414,7 +1435,8 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
     def setup_noise_injection(self,
                             rmsnorm_config: Optional[NoiseConfig] = None,
                             softmax_config: Optional[NoiseConfig] = None,
-                            activation_config: Optional[NoiseConfig] = None) -> AttributeNoiseInjector:
+                            activation_config: Optional[NoiseConfig] = None,
+                            linear_noise_config: Optional[dict] = None) -> AttributeNoiseInjector:
         """
         Setup AttributeNoiseInjector for this model with specified noise configurations.
 
@@ -1422,6 +1444,7 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
             rmsnorm_config: Configuration for RMSNorm layer noise injection
             softmax_config: Configuration for attention softmax noise injection
             activation_config: Configuration for MLP activation function noise injection
+            linear_noise_config: Configuration for NoisyLinear layer noise injection
 
         Returns:
             AttributeNoiseInjector instance for this model
@@ -1435,6 +1458,15 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
             self.noise_injector.enable_softmax_noise(self, softmax_config)
         if activation_config:
             self.noise_injector.enable_activation_noise(self, activation_config)
+
+        # Setup linear noise config for NoisyLinear layers
+        if linear_noise_config:
+            self.linear_noise_config = linear_noise_config
+            # Propagate to all layers
+            for layer in self.model.layers:
+                layer.self_attn.linear_noise_config = linear_noise_config
+                layer.mlp.linear_noise_config = linear_noise_config
+
         return self.noise_injector
 
     def disable_all_noise(self):
@@ -1612,7 +1644,7 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
         if self.R1 is not None:
             dtype = hidden_states.dtype
             hidden_states = (
-                hidden_states.to(torch.float64) @ self.R1.weight.T.to(torch.float64)
+                hidden_states.to(torch.float64) @ self.R1.weight.T.to(hidden_states.device).to(torch.float64)
             ).to(dtype)
 
         if self.config.pretraining_tp > 1:

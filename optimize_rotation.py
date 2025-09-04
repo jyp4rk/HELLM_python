@@ -15,7 +15,72 @@ from utils.quant_utils import wrap_to_quant_model, init_weight_quantizer, init_i
 from utils import train_utils
 import utils.model_utils as model_utils
 import utils.rotation_utils as rotation_utils
+from torch import nn
 torch.backends.cudnn.benchmark = True
+import torch.distributed as dist
+from utils.utils import get_local_rank, get_logger, pt_fsdp_state_dict
+from utils.process_args import process_args_ptq
+import transformers
+
+class RotateModule(nn.Module):
+    def __init__(self, R_init):
+        super(RotateModule, self).__init__()
+        self.weight = nn.Parameter(R_init.to(torch.float32).to(torch.device("cuda")))
+
+    def forward(self, x, transpose=False):
+        if transpose:
+            return x @ self.weight
+        else:
+            return self.weight @ x
+
+def train(logger) -> None:
+    dist.init_process_group(backend="nccl")
+    model_args, training_args, ptq_args = process_args_ptq()
+    local_rank = get_local_rank()
+
+    logger.info("the rank is {}".format(local_rank))
+    torch.distributed.barrier()
+
+    config = transformers.AutoConfig.from_pretrained(
+        model_args.input_model, token=model_args.access_token
+    )
+    config.use_outlier_loss = getattr(ptq_args, "use_outlier_loss", True)
+
+    # Read outlier loss configuration from environment variables (set by training scripts)
+    config.outlier_loss_type = os.getenv('OUTLIER_LOSS_TYPE', 'cvar')  # cvar, hinged
+    config.outlier_config_preset = os.getenv('OUTLIER_CONFIG_PRESET', 'default')  # default, aggressive, conservative
+
+    # Enhanced loss system parameters
+    config.outlier_alpha = float(os.getenv('OUTLIER_ALPHA', '0.99'))  # CVaR alpha
+    config.outlier_threshold = float(os.getenv('OUTLIER_THRESHOLD', '5.0'))  # Initial threshold
+
+    # Outlier loss configuration logging
+    if local_rank == 0 and config.use_outlier_loss:
+        loss_type = getattr(config, 'outlier_loss_type', 'cvar')
+        scale_factor = float(os.getenv('OUTLIER_LOSS_SCALE', '0.1'))
+        logger.info(f"Outlier loss: {loss_type}, scale={scale_factor}")
+
+    # Llama v3.2 specific: Spinquant is not compatiable with tie_word_embeddings, clone lm_head from embed_tokens
+    process_word_embeddings = False
+    if config.tie_word_embeddings:
+        config.tie_word_embeddings = False
+        process_word_embeddings = True
+    dtype = torch.bfloat16 if training_args.bf16 else torch.float16
+    model = LlamaForCausalLMQuant.from_pretrained(
+        pretrained_model_name_or_path=model_args.input_model,
+        config=config,
+        torch_dtype=dtype,
+        token=model_args.access_token,
+    )
+    if process_word_embeddings:
+        model.lm_head.weight.data = model.model.embed_tokens.weight.data.clone()
+
+    model = prepare_model(ptq_args, model)
+    for param in model.parameters():
+        param.requires_grad = False
+    R1 = random_hadamard_matrix(model.config.hidden_size, "cuda")
+    model.R1 = RotateModule(R1)
+
 
 @torch.no_grad()
 def evaluate(model, tokenizer,prefixed_key_values, args, logger):
@@ -31,7 +96,7 @@ def evaluate(model, tokenizer,prefixed_key_values, args, logger):
         for dataset in ppl_results:
             logger.info(f'{dataset} perplexity: {ppl_results[dataset]:.2f}')
             results_str += f"{ppl_results[dataset]:.2f} "
-    
+
 
 
     if args.eval_tasks != "":
@@ -116,7 +181,6 @@ def main():
     parser.add_argument("--qk_online_had", action="store_true")
     parser.add_argument("--set_prefixed_tokens", action="store_true")
     parser.add_argument("--outlier_threshold", type=int, default=64, help="\eta in Eq.(3), indicating the oitlier threshold ratio detect outlier tokens, ")
-    parser.add_argument("--force_recompute_prefix", action="store_true", help="Force recomputation of prefix tokens, ignoring cache")
     parser.add_argument("--activation_clipping", action="store_true",help="layer-wise activation clipping for dynamic quantization")
     # -----------------training setting------------------------------------
     parser.add_argument("--quant_lr", type=float, default=5e-5, help="lr of quantization parameters (s and z)")
@@ -156,7 +220,7 @@ def main():
     # ------------------ ablation ------------------------------------------
     parser.add_argument("--ablate_prefix_number", type=int, default=None,help="")
 
-    
+
 
 
     os.environ['TOKENIZERS_PARALLELISM'] = 'false'
@@ -165,7 +229,7 @@ def main():
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
-        
+
 
     # init logger
     if args.output_dir:
@@ -205,16 +269,16 @@ def main():
         layers = model_utils.get_layers(model)
         for layer in layers:
             rotation_utils.add_qk_rotation_wrapper_after_function_call_in_forward(
-                        layer.self_attn, 
-                        rope_function_name, 
+                        layer.self_attn,
+                        rope_function_name,
                         config=model.config,
-                        online_had=args.qk_online_had)   
+                        online_had=args.qk_online_had)
 
-        prefixed_tokens = None                
+        prefixed_tokens = None
         prefixed_key_values = None
         args.prefixed_length = 0
-        activation_stat = None  
-        include_static = (args.input_mode == "static" and args.input_bits < 16 ) or (args.kv_mode == "static" and (args.k_bits<16 or args.v_bits<16))            
+        activation_stat = None
+        include_static = (args.input_mode == "static" and args.input_bits < 16 ) or (args.kv_mode == "static" and (args.k_bits<16 or args.v_bits<16))
         if args.set_prefixed_tokens or include_static:
             from utils.stat_utils import get_prefixed_tokens
             # model and data prepaer
@@ -236,15 +300,7 @@ def main():
             # get prefixed tokens
             if args.set_prefixed_tokens:
                 tick = time.time()
-                # Use cached prefix tokens to avoid expensive recomputation
-                from utils.prefix_cache import get_cached_prefixed_tokens
-                prefixed_tokens = get_cached_prefixed_tokens(
-                    cal_dataloader, model, tokenizer, args.model_name,
-                    outlier_threshold=args.outlier_threshold, 
-                    activation_type='down_proj',
-                    cache_file=f'{args.cache_dir}/prefix_cache.json',
-                    force_recompute=getattr(args, 'force_recompute_prefix', False)
-                )
+                prefixed_tokens = get_prefixed_tokens(cal_dataloader, model, tokenizer, args.model_name, outlier_threshold=args.outlier_threshold, activation_type='down_proj')
                 logger.info(f"get {len(prefixed_tokens)} prefixed tokens; token id:{prefixed_tokens}; text: {tokenizer.decode(prefixed_tokens)}")
                 logger.info(f"time to get prefixed token:{time.time()-tick:.0}s")
                 model.config.prefixed_tokens = prefixed_tokens
@@ -257,7 +313,7 @@ def main():
                 output = model(torch.tensor([prefixed_tokens],device=model.device),return_dict=True)
                 prefixed_key_values = output.past_key_values
                 model.config.use_cache = use_cache
-                
+
             # get activation statistic for activation quantization
             if include_static:
                 # assert args.input_mode == "static" or args.kv_mode == "static","mse_init require static quantization"
@@ -265,7 +321,7 @@ def main():
             if original_device == 'cpu':
                 remove_hook_from_module(model, recurse=True)
                 model = model.cpu()
-                
+
         # init weight quantizer
         if args.wbits < 16:
             logger.info('init weight quantizer')
@@ -283,10 +339,10 @@ def main():
 
         # init V quantizer
         if args.k_bits < 16:
-            # consistently init for wrap rope 
+            # consistently init for wrap rope
             logger.info('init k quantizer')
             init_k_quantizer(args, model, activation_stat)
-            
+
         train_utils.cleanup_memory()
 
 
@@ -297,7 +353,7 @@ def main():
         if args.epochs > 0 or args.mse_init:
             assert args.wbits < 16 or args.input_bits < 16 or args.output_bits < 16
             logger.info("=== start quantization Training ===")
-            tick = time.time()     
+            tick = time.time()
             # load calibration dataset
             if args.epochs == 0:
                 # only mse init without training
@@ -319,16 +375,16 @@ def main():
                     seed=args.seed,
                     seqlen=args.training_seqlen,
                 )
-                torch.save(trainloader, cache_trainloader)    
-                torch.save(valloader, cache_valloader)    
+                torch.save(trainloader, cache_trainloader)
+                torch.save(valloader, cache_valloader)
             block_ap(model,prefixed_key_values,args,trainloader,valloader,logger)
             logger.info(time.time() - tick)
     model.half()
     torch.cuda.empty_cache()
     if args.save_quant_dir:
         logger.info("start saving model")
-        model.save_pretrained(args.save_quant_dir)  
-        tokenizer.save_pretrained(args.save_quant_dir) 
+        model.save_pretrained(args.save_quant_dir)
+        tokenizer.save_pretrained(args.save_quant_dir)
         torch.save(prefixed_key_values,os.path.join(args.save_quant_dir, 'prefixed_key_values.pth'))
         quant_config = get_quant_config(args)
         quant_config['prefixed_tokens'] = prefixed_tokens

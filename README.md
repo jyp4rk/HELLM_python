@@ -67,7 +67,7 @@ CUDA_VISIBLE_DEVICES=0 python eval.py \
 ## Plot Activation Distribution
 We provide an example command to visualize token-wsie maximum values for linear inputs:
 CUDA_VISIBLE_DEVICES=0 python plot_activation.py \
---model_path /scale/cal/home/jypark/models--meta-llama--Llama-2-7b-hf/snapshots/ 01c7f73d771dfac7d292323805ebc428287df4f9 \
+--model_path /data/jypark/models--meta-llama--Llama-2-7b-hf/snapshots/ 01c7f73d771dfac7d292323805ebc428287df4f9 \
 --model_name llama-2-7b \
 --plot_linear_input
 ```

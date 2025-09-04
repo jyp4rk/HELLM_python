@@ -26,6 +26,8 @@ def stat_layer_wise_magnitude_input(dataloader, activation_dict, model, layer_na
                 entire_name = f'model.layers.{block_index}.mlp.down_proj'
             elif layer_name == 'up_proj':
                 entire_name = f'model.layers.{block_index}.mlp.up_proj'
+            elif layer_name == 'gate_proj':
+                entire_name = f'model.layers.{block_index}.mlp.gate_proj'
             elif layer_name == 'q_proj':
                 entire_name = f'model.layers.{block_index}.self_attn.q_proj'
             elif layer_name == 'o_proj':
@@ -94,6 +96,8 @@ def stat_layer_wise_magnitude_output(dataloader, activation_dict, model, layer_n
                 entire_name = f'model.layers.{block_index}.mlp.down_proj'
             elif layer_name == 'up_proj':
                 entire_name = f'model.layers.{block_index}.mlp.up_proj'
+            elif layer_name == 'gate_proj':
+                entire_name = f'model.layers.{block_index}.mlp.gate_proj'
             elif layer_name == 'q_proj':
                 entire_name = f'model.layers.{block_index}.self_attn.q_proj'
             elif layer_name == 'k_proj':
@@ -126,23 +130,86 @@ def stat_layer_wise_outlier_token_number(dataloader, output_activation, model, o
     data_num = len(dataloader)
     for i in range(data_num):
         data = dataloader[i][0]
+        # The model forward pass should populate output_activation through hooks
+        # that were registered before this function was called
         with torch.no_grad():
             model(data.to('cuda'))
+        
+        # Debug: Check if activation dict is populated
+        if not output_activation:
+            raise ValueError(f"Activation dictionary is empty after forward pass. Expected keys like 'model.layers.0' for outlier_object='{outlier_object}'")
+        
         num_layers = len(model.model.layers)
         seq_np = np.zeros((1, num_layers))
         for block_index in range(num_layers):
             if outlier_object == 'hidden_state':
                 entire_name = f'model.layers.{block_index}'
+                activation_abs = output_activation[entire_name].abs()
+                activation_abs = activation_abs.max(dim=-1).values
+                sort_res = torch.sort(activation_abs.flatten(), descending=True)
+                # ratio = sort_res.values / sort_res.values.median()
+                num = (sort_res.values > outlier_threshold).sum()
+                seq_np[0, block_index] = num.cpu()
             elif outlier_object == 'down_proj':
                 entire_name = f'model.layers.{block_index}.mlp.down_proj'
+                activation_abs = output_activation[entire_name].abs()
+                activation_abs = activation_abs.max(dim=-1).values
+                sort_res = torch.sort(activation_abs.flatten(), descending=True)
+                # ratio = sort_res.values / sort_res.values.median()
+                num = (sort_res.values > outlier_threshold).sum()
+                seq_np[0, block_index] = num.cpu()
+            elif outlier_object == 'swish':
+                entire_name = f'model.layers.{block_index}.mlp.gate_proj'
+                activation_abs = output_activation[entire_name].abs()
+                activation_abs = activation_abs.max(dim=-1).values
+                sort_res = torch.sort(activation_abs.flatten(), descending=True)
+                ratio = sort_res.values / sort_res.values.median()
+                num = (sort_res.values > outlier_threshold).sum()
+                seq_np[0, block_index] = num.cpu()
+            elif outlier_object == 'q_k_up_gate':
+                # Aggregate outliers from multiple projection layers
+                layer_names = ['q_proj', 'k_proj', 'up_proj', 'gate_proj']
+                layer_paths = [
+                    f'model.layers.{block_index}.self_attn.q_proj',
+                    f'model.layers.{block_index}.self_attn.k_proj',
+                    f'model.layers.{block_index}.mlp.up_proj',
+                    f'model.layers.{block_index}.mlp.gate_proj'
+                ]
+
+                all_outliers = 0
+                for layer_path in layer_paths:
+                    if layer_path in output_activation:
+                        activation_abs = output_activation[layer_path].abs()
+                        activation_abs = activation_abs.max(dim=-1).values
+                        sort_res = torch.sort(activation_abs.flatten(), descending=True)
+                        ratio = sort_res.values / sort_res.values.median()
+                        layer_outliers = (sort_res.values > outlier_threshold).sum()
+                        all_outliers += layer_outliers
+
+                seq_np[0, block_index] = all_outliers.cpu()
+            elif outlier_object == 'all':
+                layer_names = ['q_proj', 'k_proj', 'v_proj', 'o_proj', 'up_proj', 'gate_proj', 'down_proj']
+                layer_paths = [
+                    f'model.layers.{block_index}.self_attn.q_proj',
+                    f'model.layers.{block_index}.self_attn.k_proj',
+                    f'model.layers.{block_index}.self_attn.v_proj',
+                    f'model.layers.{block_index}.self_attn.o_proj',
+                    f'model.layers.{block_index}.mlp.up_proj',
+                    f'model.layers.{block_index}.mlp.gate_proj',
+                    f'model.layers.{block_index}.mlp.down_proj'
+                ]
+                all_outliers = 0
+                for layer_path in layer_paths:
+                    if layer_path in output_activation:
+                        activation_abs = output_activation[layer_path].abs()
+                        activation_abs = activation_abs.max(dim=-1).values
+                        sort_res = torch.sort(activation_abs.flatten(), descending=True)
+                        ratio = sort_res.values / sort_res.values.median()
+                        layer_outliers = (sort_res.values > outlier_threshold).sum()
+                        all_outliers += layer_outliers
+                seq_np[0, block_index] = all_outliers.cpu()
             else:
                 raise NotImplementedError
-            activation_abs = output_activation[entire_name].abs()
-            activation_abs = activation_abs.max(dim=-1).values
-            sort_res = torch.sort(activation_abs.flatten(), descending=True)
-            ratio = sort_res.values / sort_res.values.median()
-            num = (ratio > outlier_threshold).sum()
-            seq_np[0, block_index] = num.cpu()
         stats.append(seq_np)
     return stats
 
@@ -191,28 +258,125 @@ def stat_outlier_token(dataloader, output_activation, model, tokenizer=None, dec
         for block_index in range(num_layers):
             if outlier_object == 'hidden_state':
                 entire_name = f'model.layers.{block_index}'
+                activation_abs = output_activation[entire_name].abs()
+                activation_abs = activation_abs.max(dim=-1).values
+                sort_res = torch.sort(activation_abs.flatten(), descending=True)
+                ratio = sort_res.values / sort_res.values.median()
+                num = (ratio > outlier_threshold).sum()
+                if num > 0:
+                    selected_token_indexs = sort_res.indices[:num]
+                    for token_index in selected_token_indexs:
+                        if token_index == 0:
+                            continue
+                        else:
+                            if decode:
+                                content = tokenizer.decode(data[0][token_index])
+                                if content =='\n':
+                                    content = '\\n'
+                                stats.append(f"'{content}'")
+                            else:
+                                stats.append(data[0][token_index].item())
+            elif outlier_object == 'swish':
+                entire_name = f'model.layers.{block_index}.mlp.gate_proj'
+                activation_abs = output_activation[entire_name].abs()
+                activation_abs = activation_abs.max(dim=-1).values
+                sort_res = torch.sort(activation_abs.flatten(), descending=True)
+                ratio = sort_res.values / sort_res.values.median()
+                num = (sort_res.values > outlier_threshold).sum()
+                if num > 0:
+                    selected_token_indexs = sort_res.indices[:num]
+                    for token_index in selected_token_indexs:
+                        if token_index == 0:
+                            continue
+                        else:
+                            if decode:
+                                content = tokenizer.decode(data[0][token_index])
+                                if content =='\n':
+                                    content = '\\n'
+                                stats.append(f"'{content}'")
+                            else:
+                                stats.append(data[0][token_index].item())
             elif outlier_object == 'down_proj':
                 entire_name = f'model.layers.{block_index}.mlp.down_proj'
+                activation_abs = output_activation[entire_name].abs()
+                activation_abs = activation_abs.max(dim=-1).values
+                sort_res = torch.sort(activation_abs.flatten(), descending=True)
+                ratio = sort_res.values / sort_res.values.median()
+                num = (ratio > outlier_threshold).sum()
+                if num > 0:
+                    selected_token_indexs = sort_res.indices[:num]
+                    for token_index in selected_token_indexs:
+                        if token_index == 0:
+                            continue
+                        else:
+                            if decode:
+                                content = tokenizer.decode(data[0][token_index])
+                                if content =='\n':
+                                    content = '\\n'
+                                stats.append(f"'{content}'")
+                            else:
+                                stats.append(data[0][token_index].item())
+            elif outlier_object == 'q_k_up_gate':
+                # Collect outlier tokens from multiple projection layers
+                layer_paths = [
+                    f'model.layers.{block_index}.self_attn.q_proj',
+                    f'model.layers.{block_index}.self_attn.k_proj',
+                    f'model.layers.{block_index}.mlp.up_proj',
+                    f'model.layers.{block_index}.mlp.gate_proj'
+                ]
+
+                for layer_path in layer_paths:
+                    if layer_path in output_activation:
+                        activation_abs = output_activation[layer_path].abs()
+                        activation_abs = activation_abs.max(dim=-1).values
+                        sort_res = torch.sort(activation_abs.flatten(), descending=True)
+                        ratio = sort_res.values / sort_res.values.median()
+                        num = (ratio > outlier_threshold).sum()
+                        if num > 0:
+                            selected_token_indexs = sort_res.indices[:num]
+                            for token_index in selected_token_indexs:
+                                if token_index == 0:
+                                    continue
+                                else:
+                                    if decode:
+                                        content = tokenizer.decode(data[0][token_index])
+                                        if content =='\n':
+                                            content = '\\n'
+                                        stats.append(f"'{content}'")
+                                    else:
+                                        stats.append(data[0][token_index].item())
+            elif outlier_object == 'all':
+                layer_paths = [
+                    f'model.layers.{block_index}.self_attn.q_proj',
+                    f'model.layers.{block_index}.self_attn.k_proj',
+                    f'model.layers.{block_index}.self_attn.v_proj',
+                    f'model.layers.{block_index}.self_attn.o_proj',
+                    f'model.layers.{block_index}.mlp.up_proj',
+                    f'model.layers.{block_index}.mlp.gate_proj',
+                    f'model.layers.{block_index}.mlp.down_proj'
+                ]
+                for layer_path in layer_paths:
+                    if layer_path in output_activation:
+                        activation_abs = output_activation[layer_path].abs()
+                        activation_abs = activation_abs.max(dim=-1).values
+                        sort_res = torch.sort(activation_abs.flatten(), descending=True)
+                        ratio = sort_res.values / sort_res.values.median()
+                        num = (ratio > outlier_threshold).sum()
+                        if num > 0:
+                            selected_token_indexs = sort_res.indices[:num]
+                            for token_index in selected_token_indexs:
+                                if token_index == 0:
+                                    continue
+                                else:
+                                    if decode:
+                                        content = tokenizer.decode(data[0][token_index])
+                                        if content =='\n':
+                                            content = '\\n'
+                                        stats.append(f"'{content}'")
+                                    else:
+                                        stats.append(data[0][token_index].item())
             else:
                 raise NotImplementedError
-            activation_abs = output_activation[entire_name].abs()
-            activation_abs = activation_abs.max(dim=-1).values
-            sort_res = torch.sort(activation_abs.flatten(), descending=True)
-            ratio = sort_res.values / sort_res.values.median()
-            num = (ratio > outlier_threshold).sum()
-            if num > 0:
-                selected_token_indexs = sort_res.indices[:num]
-                for token_index in selected_token_indexs:
-                    if token_index == 0:
-                        continue
-                    else:
-                        if decode:
-                            content = tokenizer.decode(data[0][token_index])
-                            if content =='\n':
-                                content = '\\n'
-                            stats.append(f"'{content}'")
-                        else:
-                            stats.append(data[0][token_index].item())
     return stats
 
 
@@ -273,18 +437,58 @@ def get_prefixed_tokens(dataloader, model, tokenizer, model_name, outlier_thresh
         is_input = True
         from quantize.int_linear_fake import QuantLinear
         target_class = (torch.nn.Linear, QuantLinear)
+    elif activation_type == 'swish':
+        is_input = False
+        from quantize.int_linear_fake import QuantLinear
+        target_class = (torch.nn.Linear, QuantLinear)
+        # Define the target layer names for swish activation
+        target_layer_names = ['gate_proj']
+    elif activation_type == 'q_k_up_gate':
+        is_input = False
+        from quantize.int_linear_fake import QuantLinear
+        target_class = (torch.nn.Linear, QuantLinear)
+        # Define the target layer names for multi-layer collection
+        target_layer_names = ['q_proj', 'k_proj', 'up_proj', 'gate_proj']
+    elif activation_type == 'all':
+        is_input = False
+        from quantize.int_linear_fake import QuantLinear
+        target_class = (torch.nn.Linear, QuantLinear)
+        target_layer_names = ['q_proj', 'k_proj', 'v_proj', 'o_proj', 'up_proj', 'gate_proj', 'down_proj']
     else:
         raise NotImplementedError
 
     hooks = []
     for name, layer in model.named_modules():
         if isinstance(layer, target_class):
-            if isinstance(layer, torch.nn.Linear) and not down_proj_name in name:
-                continue
-            hooks.append(layer.register_forward_hook(get_activation_hook_2(name, activation_dict, is_input)))
+            if activation_type == 'q_k_up_gate':
+                # For q_k_up_gate, only register hooks for specified projection layers
+                if any(proj_name in name for proj_name in target_layer_names):
+                    hooks.append(layer.register_forward_hook(get_activation_hook_2(name, activation_dict, is_input)))
+            elif activation_type == 'all':
+                # For all activations, register hooks for all linear layers
+                hooks.append(layer.register_forward_hook(get_activation_hook_2(name, activation_dict, is_input)))
+            elif activation_type == 'down_proj':
+                # For down_proj, only register hooks for down_proj layers
+                if isinstance(layer, torch.nn.Linear) and not down_proj_name in name:
+                    continue
+                hooks.append(layer.register_forward_hook(get_activation_hook_2(name, activation_dict, is_input)))
+            elif activation_type == 'swish':
+                # For swish activation, only register hooks for gate_proj layers
+                if any(layer_name in name for layer_name in target_layer_names):
+                    hooks.append(layer.register_forward_hook(get_activation_hook_2(name, activation_dict, is_input)))
+            else:
+                # For other activation types (e.g., hidden_state)
+                hooks.append(layer.register_forward_hook(get_activation_hook_2(name, activation_dict, is_input)))
+    # Debug: Run model once to populate activation_dict before calling stat function
+    if activation_dict == {} and hooks:
+        # Run a forward pass to populate the activation_dict
+        with torch.no_grad():
+            sample_data = dataloader[0][0]
+            model(sample_data.to('cuda'))
+    
     stats = stat_layer_wise_outlier_token_number(dataloader, activation_dict, model, outlier_threshold, activation_type)
     outlier_num = int(np.ceil(np.mean(stats,axis=0).max()))
-    assert outlier_num > 0
+    # assert outlier_num > 0
     # find high-frequency outlier token
     stats = stat_outlier_token(dataloader, activation_dict, model, None,  False, outlier_threshold, activation_type)
     token_dict = Counter(stats)

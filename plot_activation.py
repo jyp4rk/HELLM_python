@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import os
 from transformers import AutoTokenizer, AutoModelForCausalLM
+from eval_utils.modeling_llama import LlamaForCausalLM
 import os
 from utils.data_utils import get_loaders
 import argparse
@@ -31,17 +32,28 @@ from utils.stat_utils import (
     stat_outlier_token_number,
 )
 from utils.quant_utils import wrap_to_quant_model, register_online_had
+import transformers
+from utils.process_args import process_args_ptq
+
 
 
 def build_model_and_tokenizer(model_name):
     kwargs = {"torch_dtype": torch.float16, "device_map": "cpu"}
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_name, trust_remote_code=True, add_bos_token=False
-    )
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name, trust_remote_code=True, **kwargs
-    )
+    tokenizer = AutoTokenizer.from_pretrained(model_name,trust_remote_code=True,add_bos_token=False)
+    model = AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True,**kwargs)
     return model, tokenizer
+    # kwargs = {"torch_dtype": torch.float16, "device_map": "cpu"}
+    # tokenizer = AutoTokenizer.from_pretrained(
+    #     model_name, trust_remote_code=True, add_bos_token=False
+    # )
+    # model_args, _, _ = process_args_ptq()
+    # config = transformers.AutoConfig.from_pretrained(
+    #     model_args.input_model, token=model_args.access_token
+    # )
+    # model = LlamaForCausalLM.from_pretrained(
+    #     model_name, config=config, torch_dtype = torch.float16
+    # )
+    # return model, tokenizer
 
 
 def parse_args():
@@ -77,24 +89,30 @@ def parse_args():
     parser.add_argument("--pre_rotate", action="store_true")
     parser.add_argument("--down_online_had", action="store_true")
     parser.add_argument("--qk_online_had", action="store_true")
+    parser.add_argument("--qk_direct_had", action="store_true")
     parser.add_argument(
         "--outlier_threshold",
         type=int,
         default=64,
-        help="\eta in Eq.(3), indicating the oitlier threshold ratio detect outlier tokens, ",
+        help="\eta in Eq.(3), indicating the outlier threshold ratio detect outlier tokens, ",
     )
-    parser.add_argument("--outlier_object", type=str, default="down_proj")
+    parser.add_argument("--outlier_object", type=str, default="hidden_state",)
     parser.add_argument("--set_prefixed_tokens", action="store_true")
     # ----------------- What to plot ------------------------------------
     parser.add_argument(
         "--plot_linear_input",
         action="store_true",
-        help="plot token-wsie maximum values for linear inputs",
+        help="plot token-wise maximum values for linear inputs",
     )
     parser.add_argument(
         "--plot_linear_output",
         action="store_true",
-        help="plot token-wsie maximum values for linear outputs",
+        help="plot token-wise maximum values for linear outputs",
+    )
+    parser.add_argument(
+        "--plot_swish_input",
+        action="store_true",
+        help="plot token-wise maximum values for swish inputs",
     )
     parser.add_argument(
         "--plot_layer_wise_outlier_token_number",
@@ -189,7 +207,7 @@ def get_activation_hook(
     return hook
 
 
-# step1: prepapre the model and dataset
+# step1: prepare the model and dataset
 args = parse_args()
 os.makedirs(args.save_dir, exist_ok=True)
 model, tokenizer = build_model_and_tokenizer(args.model_path)
@@ -199,11 +217,14 @@ if args.pre_rotate:
     rotation_utils.fuse_layer_norms(model)
     rotation_utils.rotate_model(
         model, rotate_mode="hadamard", online=args.down_online_had
-    )
+    ) ## jyp: online argument not used for me
     model.half()
+if args.qk_direct_had:
+    rotation_utils.fuse_hadamard_into_qk_weights(model)
+    rotation_utils.register_qk_online_hadamard(model,model.config)
 wrap_to_quant_model(model)
 if args.pre_rotate and args.down_online_had:
-    register_online_had(model)
+    register_online_had(model) ## jyp: not used for me
     down_had_K, down_K = hadamard_utils.get_hadK(model.config.intermediate_size)
 else:
     down_K = None
@@ -211,13 +232,14 @@ else:
 # wrap rope for online_had and rope output capture
 rope_function_name = model_utils.get_rope_function_name(model)
 layers = model_utils.get_layers(model)
-for layer in layers:
-    rotation_utils.add_qk_rotation_wrapper_after_function_call_in_forward(
-        layer.self_attn,
-        rope_function_name,
-        config=model.config,
-        online_had=args.qk_online_had,
-    )
+# for layer in layers:
+#     rotation_utils.add_qk_rotation_wrapper_after_function_call_in_forward(
+#         layer.self_attn,
+#         rope_function_name,
+#         config=model.config,
+#         online_had=args.qk_online_had,
+#     )
+
 dataloader, _ = get_loaders(
     args.dataset,
     tokenizer,
@@ -226,7 +248,6 @@ dataloader, _ = get_loaders(
     seed=args.seed,
     seqlen=args.seq_len,
 )
-
 
 # step 2: get prefixed tokens （optional）
 prefixed_tokens = None
@@ -245,15 +266,17 @@ if args.set_prefixed_tokens:
         model = dispatch_model(model, device_map=device_map)
     else:
         original_device = "cuda"
-    # get prefixed tokens
+    # get prefixed tokens using cache system
     if args.set_prefixed_tokens:
-        prefixed_tokens = get_prefixed_tokens(
+        from utils.prefix_cache import get_cached_prefixed_tokens
+        prefixed_tokens = get_cached_prefixed_tokens(
             dataloader,
             model,
             tokenizer,
             args.model_name,
-            args.outlier_threshold,
-            args.outlier_object,
+            outlier_threshold=args.outlier_threshold,
+            activation_type=args.outlier_object,
+            cache_file=f'./cache/prefix_cache.json'
         )
         print(
             f"get {len(prefixed_tokens)} prefixed tokens; token id:{prefixed_tokens}; text: {tokenizer.decode(prefixed_tokens)}"
@@ -284,6 +307,7 @@ if (
     or args.plot_outlier_token_position
     or args.plot_outlier_token
     or args.plot_outlier_token_number
+    or args.plot_swish_input
 ):
     class_tuple = (nn.Linear, QuantLinear)
 elif args.plot_linear_output:
@@ -322,7 +346,11 @@ if args.plot_linear_input:
         plot_layer_ax_input(
             stat, args.model_name, args.save_dir, layer_name, not args.disable_legend
         )
-
+if args.plot_swish_input:
+    layer_name = ["gate_proj"]
+    stats = []
+    stats.append(stat_layer_wise_magnitude_output(dataloader,output_activation,model,"gate_proj",prefixed_tokens))
+    plot_layer_ax_output(stats[0], args.model_name, args.save_dir, "gate_proj", not args.disable_legend)
 
 # step 4.2: plot the token-wise output magnitude
 if args.plot_linear_output:
@@ -336,7 +364,7 @@ if args.plot_linear_output:
     for layer_name in layer_names:
         stats.append(
             stat_layer_wise_magnitude_output(
-                dataloader, input_activation, model, layer_name, prefixed_tokens
+                dataloader, output_activation, model, layer_name, prefixed_tokens
             )
         )
     plot_combined_layer_ax_output(

@@ -106,13 +106,13 @@ def wrap_to_quant_model(model):
             continue
         if isinstance(module,torch.nn.Linear):
             quantlinear = int_linear_fake.QuantLinear(module)
-            set_op_by_name(model, name, quantlinear)  
-            del module  
+            set_op_by_name(model, name, quantlinear)
+            del module
         elif isinstance(module,(RMSN, LlamaRMSNorm)):
             quantnorm = QuantRMSNorm(module)
-            set_op_by_name(model, name, quantnorm)  
-            del module 
-            
+            set_op_by_name(model, name, quantnorm)
+            del module
+
 
 def register_online_had(model):
     for name, module in model.named_modules():
@@ -165,7 +165,7 @@ def init_input_quantizer(args, model, activation_stat=None, minmax_init=True):
             module.input_quantizer = UniformAffineQuantizer(input_bits, quantized_shape, input_asym, input_group_size,
                                                             quantized_item_stat=input_stat,
                                                             quant_type='activation',
-                                                            mode=input_mode, 
+                                                            mode=input_mode,
                                                             activation_clipping=activation_clipping,
                                                             minmax_init=minmax_init)
             sym_stat = "asymmetric" if input_asym else 'symmetric'
@@ -186,7 +186,7 @@ def init_input_quantizer(args, model, activation_stat=None, minmax_init=True):
             module.output_quantizer =  UniformAffineQuantizer(output_bits, quantized_shape, output_asym, output_group_size,
                                                             quantized_item_stat=output_stat,
                                                             quant_type='activation',
-                                                            mode=output_mode, 
+                                                            mode=output_mode,
                                                             activation_clipping=activation_clipping,
                                                             minmax_init=minmax_init)
             sym_stat = "asymmetric" if output_asym else 'symmetric'
@@ -209,7 +209,7 @@ def init_v_quantizer(args, model, activation_stat=None, minmax_init=True):
             module.use_act_quant = True
             activation_clipping=args.activation_clipping
             quantized_shape = (1,module.out_features)
-            module.output_quantizer = UniformAffineQuantizer(output_bits, quantized_shape, output_asym, output_group_size, 
+            module.output_quantizer = UniformAffineQuantizer(output_bits, quantized_shape, output_asym, output_group_size,
                                                             quantized_item_stat=output_stat,
                                                             quant_type='activation',
                                                             mode=output_mode,
@@ -219,8 +219,8 @@ def init_v_quantizer(args, model, activation_stat=None, minmax_init=True):
             print(f'v-cache quantization: set {name} as {output_bits}-bit {output_group_size} groupsize {output_mode} {sym_stat} quantization')
 
 
-    
-    
+
+
 def init_k_quantizer(args, model, activation_stat=None, minmax_init=True):
     num_heads = model.config.num_attention_heads
     num_kv_heads = model.config.num_key_value_heads
@@ -270,8 +270,8 @@ def init_k_quantizer(args, model, activation_stat=None, minmax_init=True):
                                                                 minmax_init=minmax_init)
                 sym_stat = "asymmetric" if output_asym else 'symmetric'
                 print(f'k-cache quantization: set {name} as {output_bits}-bit {output_group_size} groupsize {output_mode} {sym_stat} quantization')
-                
-       
+
+
 @torch.no_grad()
 def weight_layer_mse_init(module, input_feat, n_grid=20, max_shrink=0.5):
 # def weight_layer_mse_init(module, input_feat, n_grid=50, max_shrink=0.75):
@@ -301,7 +301,7 @@ def weight_layer_mse_init(module, input_feat, n_grid=20, max_shrink=0.5):
     input_feat = input_feat.to(w.device)
     oc_batch_size = 256 if w.shape[0] % 256 == 0 else 64  # prevent OOM
     assert w.shape[0] % oc_batch_size == 0
-    
+
     best_scale_list = []
     min_errs_list = []
     for i_b in range(w.shape[0] // oc_batch_size):
@@ -432,7 +432,7 @@ def tensor_mse_init_static(quantizer, data, n_grid=20, max_shrink=0.5):
 #         for upbound_fator in searched_upbound_factors:
 #             for lowbound_factor in searched_lowbound_factors:
 #                 quantizer.upbound_factor.data = upbound_fator
-#                 quantizer.lowbound_factor.data = lowbound_factor        
+#                 quantizer.lowbound_factor.data = lowbound_factor
 #         q_data = quantizer(data)
 #         err = (data - q_data).pow(2).reshape((bs, seq_len, -1, group_size)).mean(dim=(0,1,3)).view(min_errs.shape)
 #         del q_data
@@ -470,7 +470,7 @@ def block_mse_init_static(quantizer, qblock, prefixed_key_values, dev, data_inpu
             best_loss = cur_loss
             best_scale = cur_scale
             best_clip_factor = clip_factor
-    
+
     fine_search_factors = torch.linspace(best_clip_factor-0.05, best_clip_factor+0.05, 10).to(dev)
 
     for clip_factor in fine_search_factors:
@@ -496,7 +496,7 @@ def block_mse_init_dynamic(quantizer, qblock, prefixed_key_values, dev, data_inp
     loss_func = torch.nn.MSELoss()
     best_loss = torch.inf
     bs = data_inputs.shape[0]
-    
+
     if quantizer.asym:
         searched_upbound_factors = torch.linspace(0.6, 1, 9).to(dev)
         searched_lowbound_factors = torch.linspace(0.6, 1, 9).to(dev)
@@ -560,15 +560,15 @@ def mse_init(qblock, prefixed_key_values, dev, data_inputs, attention_mask, posi
     data_gts = torch.zeros_like(data_inputs)
     for i in range(len(data_inputs)):
         with torch.cuda.amp.autocast():
-            # data_gts[i:i+1] = qblock(data_inputs[i:i+1],position_ids=position_ids,past_key_value=get_kv_cache(prefixed_key_values))[0]    
-            data_gts[i:i+1] = qblock(data_inputs[i:i+1],attention_mask=attention_mask, position_ids=position_ids,past_key_value=get_kv_cache(prefixed_key_values))[0]    
+            # data_gts[i:i+1] = qblock(data_inputs[i:i+1],position_ids=position_ids,past_key_value=get_kv_cache(prefixed_key_values))[0]
+            data_gts[i:i+1] = qblock(data_inputs[i:i+1],attention_mask=attention_mask, position_ids=position_ids,past_key_value=get_kv_cache(prefixed_key_values))[0]
     if data_gt_asym is not None:
         data_gts = data_gt_asym
     for h in hooks:
         h.remove()
     # end of part 1
     # part2: mse init of quantizer
-    batch_attention_mask = None if attention_mask is None else attention_mask.repeat(data_gts.shape[0],1,1,1) 
+    batch_attention_mask = None if attention_mask is None else attention_mask.repeat(data_gts.shape[0],1,1,1)
     for name, module in qblock.named_modules():
         if isinstance(module, (int_linear_fake.QuantLinear,QuantRMSNorm,QKRotationWrapper)):
             module.set_quant_state(weight_quant=False,act_quant=True)
@@ -581,8 +581,8 @@ def mse_init(qblock, prefixed_key_values, dev, data_inputs, attention_mask, posi
                 elif module.input_quantizer.mode=='dynamic' and module.input_quantizer.activation_clipping:
                     best_clip_factor, best_loss = block_mse_init_dynamic(module.input_quantizer, qblock, prefixed_key_values, dev, data_inputs, data_gts, batch_attention_mask, position_ids)
                     logger.info(f"[{name}_input_quantizer] clipping factor: ({best_clip_factor}); best_loss:{best_loss} ")
-            
-            # init output quantizer        
+
+            # init output quantizer
             if hasattr(module, 'output_quantizer') and module.output_quantizer.n_bits<16:
                 module.output_quantizer.activate()
                 # V cache quantization
@@ -601,7 +601,7 @@ def mse_init(qblock, prefixed_key_values, dev, data_inputs, attention_mask, posi
                     #     logger.info(f"[{name}_output_quantizer] clipping factor: ({best_clip_factor}); best_loss:{best_loss} ")
                     best_clip_factor, best_loss = block_mse_init_dynamic(module.output_quantizer, qblock, prefixed_key_values, dev, data_inputs, data_gts, batch_attention_mask, position_ids)
                     logger.info(f"[{name}_output_quantizer] clipping factor: ({best_clip_factor}); best_loss:{best_loss} ")
-            
+
             # init k quantizer
             if hasattr(module,'k_quantizer') and module.k_quantizer.mode=='static' and module.k_quantizer.n_bits<16:
                 module.k_quantizer.activate()
@@ -630,19 +630,19 @@ def mse_init(qblock, prefixed_key_values, dev, data_inputs, attention_mask, posi
                         logger.info(f"[{name}_weight_quantizer] best_loss:{best_loss} ")
             module.set_quant_state(weight_quant=False,act_quant=False)
     # end of part 2
-            
-            
-            
- 
+
+
+
+
 
 class MultiBlock(nn.Module):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.block_list = nn.ModuleList([])
-    
+
     def add_block(self, block):
         self.block_list.append(block)
-        
+
     def forward(self,
         hidden_states: torch.Tensor,
         attention_mask: Optional[torch.Tensor] = None,
@@ -667,7 +667,7 @@ def weight_parameters(model):
         if n.find('weight') > -1 and not (n.find('weight_quantizer') > -1):
             params.append(m)
     return iter(params)
-    
+
 def set_scale_parameters(model, requires_grad):
     params = []
     for n, m in model.named_parameters():
@@ -688,14 +688,14 @@ def set_quant_parameters(model, requires_grad):
         # if (n.find('scale') > -1 or n.find('zero_point') > -1) and (not n.find('smooth_scale') > -1):
         if (n.find('scale') > -1 or n.find('zero_point') > -1 or n.find('bound_factor') > -1)  and (not (n.find('in_scale') > -1 or n.find('out_scale') > -1)):
             m.requires_grad = requires_grad
-    return iter(params)  
+    return iter(params)
 
 def quant_parameters(model):
     params = []
     for n, m in model.named_parameters():
         if (n.find('scale') > -1 or n.find('zero_point') > -1 or n.find('bound_factor') > -1) and (not (n.find('in_scale') > -1 or n.find('out_scale') > -1)):
             params.append(m)
-    return iter(params)  
+    return iter(params)
 
 
 def trainable_parameters(model):
@@ -703,7 +703,7 @@ def trainable_parameters(model):
     for n, m in model.named_parameters():
         if m.requires_grad:
             params.append(m)
-    return iter(params)  
+    return iter(params)
 
 def trainable_parameters_num(model):
     params = []
@@ -728,8 +728,8 @@ def deactivate_quantizer(model):
     for m in model.modules():
         if isinstance(m, UniformAffineQuantizer):
             m.deactivate()
-            
-@torch.no_grad()   
+
+@torch.no_grad()
 def quant_inplace(model):
     for name, module in model.named_modules():
         if isinstance(module, QuantLinear):
@@ -743,17 +743,17 @@ class TruncateFunction(torch.autograd.Function):
         truncated_tensor = input.clone()
         truncated_tensor[truncated_tensor.abs() < threshold] = truncated_tensor[truncated_tensor.abs() < threshold].sign() * threshold
         return truncated_tensor
-        
+
 
     @staticmethod
     def backward(ctx, grad_output):
         grad_input = grad_output.clone()
         return grad_input, None
 
-     
+
 def truncate_number(number, threshold=1e-2):
     # avoid overflow with AMP training
-    return TruncateFunction.apply(number, threshold)     
+    return TruncateFunction.apply(number, threshold)
 
 
 def get_named_linears(module, type):
@@ -772,21 +772,21 @@ def set_op_by_name(layer, name, new_module):
         setattr(mod_, levels[-1], new_module)
     else:
         setattr(layer, name, new_module)
-        
+
 
 
 def combine_linear_layers(*linears):
     if len(linears) < 2:
         raise ValueError("at least two linear layers")
-    
+
     in_features = linears[0].in_features
     for linear in linears:
         assert linear.in_features == in_features, "input dims must be the same"
-    
+
     combined_out_features = sum(linear.out_features for linear in linears)
-    
+
     combined_linear = nn.Linear(in_features, combined_out_features,bias=None)
-    
+
     # combine the original weights
     with torch.no_grad():
         start = 0
@@ -795,8 +795,8 @@ def combine_linear_layers(*linears):
             combined_linear.weight[start:end, :] = linear.weight
             # combined_linear.bias[start:end] = linear.bias
             start = end
-    
-    return combined_linear  
+
+    return combined_linear
 
 
 def check_quantizer(model):
@@ -806,7 +806,7 @@ def check_quantizer(model):
             sym = 'asymmetric' if module.asym else 'symmetric'
             if module.enable:
                 print(f'{name}: {bits}-bit {sym} quantization')
-            
+
 
 def get_quant_config(args):
     quantization_config = {}
@@ -825,9 +825,7 @@ def get_quant_config(args):
     quantization_config["kv_mode"] = args.kv_mode
     quantization_config["down_online_had"] = args.down_online_had and args.pre_rotate
     quantization_config["qk_online_had"] = args.qk_online_had and args.pre_rotate
-    quantization_config["real_quant"] = args.real_quant    
-    quantization_config["set_prefixed_tokens"] = args.set_prefixed_tokens    
-    quantization_config["activation_clipping"] = args.activation_clipping    
+    quantization_config["real_quant"] = args.real_quant
+    quantization_config["set_prefixed_tokens"] = args.set_prefixed_tokens
+    quantization_config["activation_clipping"] = args.activation_clipping
     return quantization_config
-
-

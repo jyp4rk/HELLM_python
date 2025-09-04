@@ -81,7 +81,10 @@ def plot_layer_ax_input_sub(ax, mean, model_name, layer_name, show_ylabel=True):
         ax.set_ylabel("Maximum Value(token-wise)", fontsize=22, fontweight='bold')
     # ax.set_yticks(ax.get_yticks())
     ax.yaxis.set_tick_params(labelsize=22)
-    ax.yaxis.set_ticklabels(ax.get_yticklabels(), fontweight='bold')
+    # Fix: Use tick_params instead of set_ticklabels to set fontweight
+    ax.tick_params(axis='y', labelsize=22, which='major')
+    for label in ax.get_yticklabels():
+        label.set_fontweight('bold')
     ax.grid(axis='x', color='0.75')
     # Temporarily disabled ratio calculations and text plotting
     # ratio1 = (mean[0]/mean[-2]).max() # top-1/median
@@ -183,7 +186,10 @@ def plot_layer_ax_output_sub(ax, mean, model_name, layer_name, show_ylabel=True)
     if show_ylabel:
         ax.set_ylabel("Maximum Value(token-wise)", fontsize=22, fontweight='bold')
     ax.yaxis.set_tick_params(labelsize=22)
-    ax.yaxis.set_ticklabels(ax.get_yticklabels(), fontweight='bold')
+    # Fix: Use tick_params instead of set_ticklabels to set fontweight
+    ax.tick_params(axis='y', labelsize=22, which='major')
+    for label in ax.get_yticklabels():
+        label.set_fontweight('bold')
     ax.grid(axis='x', color='0.75')
     # Temporarily disabled ratio calculations and text plotting
     # ratio1 = (mean[-1]/mean[-2]).max() # top-1/median

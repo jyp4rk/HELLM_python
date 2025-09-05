@@ -390,9 +390,16 @@ def get_activation_hook_2(layer_name, activation_dict, is_input=True):
 
 def get_nrom_and_decoder_class(model_family, model):
     if model_family == 'llama':
-        from transformers.models.llama.modeling_llama import LlamaRMSNorm,LlamaDecoderLayer
-        norm_class = LlamaRMSNorm
-        decoder_class = LlamaDecoderLayer
+
+        # Try to get actual classes from the model instance (for CKKS compatibility)
+        if hasattr(model, 'model') and hasattr(model.model, 'layers') and len(model.model.layers) > 0:
+            decoder_class = model.model.layers[0].__class__
+            norm_class = model.model.layers[0].input_layernorm.__class__
+        else:
+            # Fallback to standard transformers classes
+            from transformers.models.llama.modeling_llama import LlamaRMSNorm,LlamaDecoderLayer
+            norm_class = LlamaRMSNorm
+            decoder_class = LlamaDecoderLayer
     elif model_family == 'qwen':
         from transformers.models.qwen2.modeling_qwen2 import Qwen2RMSNorm,Qwen2DecoderLayer
         norm_class = Qwen2RMSNorm

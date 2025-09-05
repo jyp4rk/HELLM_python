@@ -12,7 +12,7 @@ import time
 def get_pile(tokenizer, train_size, val_size, seed, seqlen):
     print("get_pile")
     traindata = load_dataset("mit-han-lab/pile-val-backup", split="validation")
-    traindata = traindata.shuffle(seed=seed) 
+    traindata = traindata.shuffle(seed=seed)
 
     random.seed(seed)
     val_sample_ratio = 0.9
@@ -56,7 +56,7 @@ def get_wikitext2(tokenizer, train_size, val_size, seed, seqlen, test_only):
         return testenc
     trainenc = tokenizer("\n\n".join(traindata['text']), return_tensors='pt')
 
-    
+
     random.seed(seed)
     trainloader = []
     val_sample_ratio = 0.9  # sample train from [0:0.9] and val from [0.9:1.0] to avoid overlap
@@ -114,7 +114,7 @@ def get_c4(tokenizer, train_size, val_size, seed, seqlen, test_only):
         valenc.append(tmp.input_ids[:, i:j])
     valenc = torch.hstack(valenc)
     if test_only:
-        return valenc 
+        return valenc
 
     random.seed(seed)
     trainloader = []
@@ -131,7 +131,7 @@ def get_c4(tokenizer, train_size, val_size, seed, seqlen, test_only):
         tar = inp.clone()
         tar[:, :-1] = -100
         trainloader.append((inp, tar))
-    
+
     valloader = []
     for _ in range(val_size):
         while True:
@@ -148,17 +148,17 @@ def get_c4(tokenizer, train_size, val_size, seed, seqlen, test_only):
 
 
 
-    return trainloader, valloader 
+    return trainloader, valloader
 
 def get_redpajama(tokenizer, train_size, val_size, seed, seqlen):
     print("get_redpajama")
     try:
         loacal_dataset = "/cpfs01/user/chenmengzhao/huggingface/datasets/togethercomputer___red_pajama-data-1_t-sample"
-        traindata = load_dataset(loacal_dataset,split='train')   
+        traindata = load_dataset(loacal_dataset,split='train')
     except:
-        traindata = load_dataset("togethercomputer/RedPajama-Data-1T-Sample",split='train')   
+        traindata = load_dataset("togethercomputer/RedPajama-Data-1T-Sample",split='train')
     random.seed(seed)
-    traindata = traindata.shuffle(seed=seed) 
+    traindata = traindata.shuffle(seed=seed)
     trainloader = []
     val_sample_ratio = 0.9
     for _ in range(train_size):
@@ -236,7 +236,7 @@ def test_ppl(args, model, tokenizer,prefixed_key_values=None, datasets=['wikitex
             neg_log_likelihood = outputs.loss * seqlen
             nlls.append(neg_log_likelihood)
 
-        
+
         ppl = torch.exp(torch.stack(nlls).sum() / (nsamples * seqlen))
         results[dataset] = ppl.item()
         print(f'{dataset}:{ppl}')
@@ -251,7 +251,7 @@ class BlockTrainDataset(Dataset):
         self.off_load_to_disk = off_load_to_disk
         self.batch_size = batch_size
         assert size%batch_size == 0
-         
+
         if self.off_load_to_disk:
             self.cache_path = self.get_cache_path(cache_path)
             if not os.path.exists(self.cache_path):
@@ -300,17 +300,17 @@ class BlockTrainDataset(Dataset):
                 tensor = self.data[idx]
             data.append(tensor)
         return torch.cat(data,dim=0)
-    
+
     def delete_cache(self):
         if os.path.exists(self.cache_path):
             shutil.rmtree(self.cache_path)
-            
+
     def get_cache_path(self, parent_dir):
         new_cache_path = None
         while new_cache_path is None or os.path.exists(new_cache_path):
             flag = time.time()
             new_cache_path = os.path.join(parent_dir, flag)
-            time.sleep(1) # avoid same flag        
+            time.sleep(1) # avoid same flag
 
 def replace_last_directory_level(original_path, new_directory):
     parts = original_path.split(os.sep)

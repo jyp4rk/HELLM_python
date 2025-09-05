@@ -127,14 +127,23 @@ def main():
         )
         logger.info(f"Activation noise injection enabled with std: {activation_std}")
 
-    # Configure NoisyLinear noise if requested
-    sqrt_Nh = np.sqrt(args.hamming_weight * args.N_bitwidth)
+    # Configure NoisyLinear noise parameters for CKKS
+    # N: Polynomial degree for CKKS encryption
+    # hamming_weight: Number of non-zero coefficients in the secret key
+    N = 2 ** args.N_bitwidth
+    sqrt_Nh = np.sqrt(args.hamming_weight * N)
+
+    # Calculate fractional bitwidth based on noise scale
+    # This ensures proper scaling for fixed-point arithmetic in CKKS
+    log2_sqrt_Nh = int(np.ceil(np.log2(sqrt_Nh)))
+    fractional_bitwidth = args.delta_bitwidth - log2_sqrt_Nh
+
     linear_noise_config = {
         "sqrt_Nh": sqrt_Nh,
         "delta_bitwidth": args.delta_bitwidth,
-        "fractional_bitwidth": args.delta_bitwidth-15
+        "fractional_bitwidth": fractional_bitwidth,
     }
-    logger.info(f"NoisyLinear noise will be enabled with sqrt_Nh={sqrt_Nh:.2f}, delta_bitwidth={args.delta_bitwidth}, fractional_bitwidth={args.delta_bitwidth-15}")
+    logger.info(f"NoisyLinear noise configured: sqrt_Nh={sqrt_Nh:.2f}, delta_bitwidth={args.delta_bitwidth}, fractional_bitwidth={fractional_bitwidth}")
 
     # Apply all noise configurations to model
     if noise_configs or linear_noise_config:

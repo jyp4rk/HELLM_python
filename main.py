@@ -4,7 +4,8 @@ import random
 import numpy as np
 import torch
 import time
-from utils.data_utils import get_loaders, test_ppl
+from utils.data_utils import test_ppl
+from utils.data_utils import get_loaders
 from quantize.block_ap import block_ap
 from pathlib import Path
 from transformers import AutoTokenizer, AutoConfig, AutoModelForCausalLM

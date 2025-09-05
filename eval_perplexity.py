@@ -3,7 +3,8 @@ import numpy as np
 import torch
 from pathlib import Path
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from utils.data_utils import test_ppl, get_loaders
+from utils.data_utils import test_ppl
+from utils.data_utils import get_loaders
 from utils.stat_utils import get_prefixed_tokens
 from utils.train_utils import create_logger
 

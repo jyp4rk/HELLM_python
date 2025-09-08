@@ -16,9 +16,6 @@ echo "Timestamp: ${TIMESTAMP}"
 echo "=========================================="
 
 # Test 1: (Baseline) Hadamard rotation, no noise
-echo ""
-echo "Test 1: Hadamard rotation, no noise"
-echo "------------------------------------------"
 python eval_perplexity_ckks.py \
     --model_path ${MODEL_PATH} \
     --output_dir ${OUTPUT_DIR}/test1_hadamard_no_noise_${TIMESTAMP} \
@@ -27,13 +24,13 @@ python eval_perplexity_ckks.py \
     --outlier_threshold 9.0 \
     --activation_type hidden_state \
     --calib_samples 16 \
-    --rotation_mode hadamard \
+    --rotation_mode identity \
     --rmsnorm_noise_std 0.0 \
     --softmax_noise_std 0.0 \
     --activation_noise_std 0.0 \
     --N_bitwidth 16 \
     --hamming_weight 192 \
-    --delta_bitwidth 42 \
+    --delta_bitwidth 36 \
 
 # # Test 5: Hadamard rotation with small noise
 # echo ""

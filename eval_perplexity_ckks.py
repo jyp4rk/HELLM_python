@@ -56,10 +56,14 @@ def main():
     model = LlamaForCausalLM.from_pretrained(
         args.model_path,
         config=config,
-        torch_dtype=torch.float16,
-        device_map="auto"
+        dtype=torch.float16,  # Changed from torch_dtype to dtype
+        device_map="auto",
+        trust_remote_code=True  # Added to use auto class and avoid GenerationMixin warning
     )
-    tokenizer = AutoTokenizer.from_pretrained(args.model_path)
+    tokenizer = AutoTokenizer.from_pretrained(
+        args.model_path,
+        trust_remote_code=True
+    )
 
     # Initialize rotation matrices
     logger.info(f"Initializing rotation matrices with mode: {args.rotation_mode}")
@@ -166,6 +170,20 @@ def main():
 
     model.eval()
 
+    # Preprocess NoisyLinear weights with rotation for memory optimization
+    logger.info("Preprocessing NoisyLinear weights with rotation...")
+
+    # Load rotation matrices and move to the same device as the model
+    R1 = model.R1.weight.data if hasattr(model, 'R1') else None
+    R2 = model.model.layers[0].self_attn.R2.weight.data if hasattr(model.model.layers[0].self_attn, 'R2') else None
+
+    model.preprocess_noisy_linear_weights(
+        noise_config=linear_noise_config,
+        R1=R1,
+        R2=R2
+    )
+    logger.info("NoisyLinear preprocessing complete")
+
     # Get calibration data for finding prefix tokens
     logger.info("Loading calibration data...")
     calib_loader, _ = get_loaders(
@@ -200,18 +218,14 @@ def main():
     # Test perplexity with prefix KV cache
     logger.info("Testing perplexity with prefix conditioning...")
     datasets = ["wikitext2"]  # Only use wikitext2 to avoid C4 loading issues
-
+    prefix_ppl = test_ppl(args, model, tokenizer, prefixed_key_values, datasets)
+    for dataset in prefix_ppl:
+        logger.info(f'{dataset} perplexity (with prefix): {prefix_ppl[dataset]:.2f}')
     # # Test WITHOUT prefix (baseline)
     # logger.info("\n=== Baseline (no prefix) ===")
     # baseline_ppl = test_ppl(args, model, tokenizer, None, datasets)
     # for dataset in baseline_ppl:
     #     logger.info(f'{dataset} perplexity (baseline): {baseline_ppl[dataset]:.2f}')
-
-    # Test WITH prefix
-    logger.info("\n=== With prefix tokens ===")
-    prefix_ppl = test_ppl(args, model, tokenizer, prefixed_key_values, datasets)
-    for dataset in prefix_ppl:
-        logger.info(f'{dataset} perplexity (with prefix): {prefix_ppl[dataset]:.2f}')
 
     # # Show difference
     # logger.info("\n=== Comparison ===")

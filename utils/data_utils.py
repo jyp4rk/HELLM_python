@@ -1,3 +1,4 @@
+import datasets
 from datasets import load_dataset
 import torch
 import random
@@ -47,14 +48,49 @@ def get_pile(tokenizer, train_size, val_size, seed, seqlen):
 
 
 def get_wikitext2(tokenizer, train_size, val_size, seed, seqlen, test_only):
-    print("get_wikitext2")
-    traindata = load_dataset('wikitext', 'wikitext-2-raw-v1', split='train')
-    testdata = load_dataset('wikitext', 'wikitext-2-raw-v1', split='test')
+    print("get_wikitext2 - direct parquet loading")
 
-    testenc = tokenizer("\n\n".join(testdata['text']), return_tensors='pt')
-    if test_only:
-        return testenc
-    trainenc = tokenizer("\n\n".join(traindata['text']), return_tensors='pt')
+    # Direct paths to parquet files (no network calls)
+    base_path = "/data/jypark/.cache/huggingface/hub/datasets--wikitext/snapshots/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext-2-raw-v1"
+
+    try:
+        # Load directly from cached parquet files
+        traindata = datasets.Dataset.from_parquet(f"{base_path}/train-00000-of-00001.parquet")
+        testdata = datasets.Dataset.from_parquet(f"{base_path}/test-00000-of-00001.parquet")
+        print("Successfully loaded from parquet files")
+    except (FileNotFoundError, Exception) as e:
+        print(f"Parquet loading failed: {e}")
+        print("Falling back to load_dataset")
+        # Fallback to load_dataset if files missing
+        traindata = load_dataset('wikitext', 'wikitext-2-raw-v1', split='train')
+        testdata = load_dataset('wikitext', 'wikitext-2-raw-v1', split='test')
+
+    # Check for pre-tokenized cache first
+    cache_file = f"./cache/wikitext2_tokenized_{tokenizer.name_or_path.replace('/', '_')}.pt"
+
+    if os.path.exists(cache_file):
+        print(f"Loading pre-tokenized cache from {cache_file}")
+        cached_data = torch.load(cache_file, weights_only=False)  # Fix for PyTorch 2.6 compatibility
+        if test_only:
+            return cached_data['test']
+        testenc, trainenc = cached_data['test'], cached_data['train']
+    else:
+        print("Pre-tokenized cache not found, tokenizing (this may take time)...")
+        print("Tokenizing test data...")
+        test_text = "\n\n".join(testdata['text'])
+        testenc = tokenizer(test_text, return_tensors='pt', max_length=None, truncation=False)
+
+        if test_only:
+            return testenc
+
+        print("Tokenizing train data...")
+        train_text = "\n\n".join(traindata['text'])
+        trainenc = tokenizer(train_text, return_tensors='pt', max_length=None, truncation=False)
+
+        # Cache the tokenized data for future use
+        print(f"Caching tokenized data to {cache_file}")
+        os.makedirs("./cache", exist_ok=True)
+        torch.save({'test': testenc, 'train': trainenc}, cache_file)
 
 
     random.seed(seed)

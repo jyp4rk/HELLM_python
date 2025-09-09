@@ -11,41 +11,24 @@ from torch._tensor import Tensor
 ##import Optional
 from typing import Optional
 
-
-def truncate_towards_zero(x: Tensor) -> Tensor:
+def quantize_to_fixed_point(x: Tensor, scale: float, inverse: bool = False) -> Tensor:
     """
-    Truncate tensor values towards zero instead of using floor.
-    For positive values: same as floor (0.13 -> 0)
-    For negative values: same as ceil (-0.13 -> 0)
+    Quantize tensor to fixed-point representation.
 
     Args:
         x: Input tensor
+        scale: Scale factor (2^fractional_bits)
+        inverse: If True, dequantize from fixed-point
 
     Returns:
-        Tensor with values truncated towards zero
+        Quantized tensor
     """
-    return torch.trunc(x)
-
-
-def safe_divide_with_rounding(numerator: Tensor, denominator: float, half_denom: float) -> Tensor:
-    """
-    Safely perform integer division with proper rounding and NaN/Inf protection.
-
-    Args:
-        numerator: Tensor to divide
-        denominator: Divisor (should be positive)
-        half_denom: Half of denominator for rounding
-
-    Returns:
-        Safely divided tensor
-    """
-    if denominator <= 0:
-        raise ValueError(f"Invalid denominator: {denominator}")
-
-    # Add rounding term and divide
-    result = (numerator + half_denom).float() / denominator
-
-    return result
+    if inverse:
+        # Dequantize: divide by scale
+        return x / scale
+    else:
+        # Quantize: multiply by scale and round
+        return torch.round(x * scale)
 
 
 class NoisyLinear(nn.Linear):
@@ -67,38 +50,44 @@ class NoisyLinear(nn.Linear):
             R2: Second rotation matrix (optional)
             transpose: Whether to transpose during rotation
         """
-        weight = self.weight
+        dtype = self.weight.dtype
+        weight = self.weight.float()
         # Split weight into integer and fractional parts for CKKS precision simulation
-        weight_int = truncate_towards_zero(weight)
+        weight_int = torch.trunc(weight)
         weight_frac = weight - weight_int
 
-        # Scale fractional part with safety checks
+        # Get fractional bitwidth and compute scale
         fractional_bitwidth = self.noise_config.fractional_bitwidth
 
-        # Clamp bitwidth to reasonable range to prevent overflow
-        fractional_bitwidth = max(1, min(fractional_bitwidth, 30))
-
+        # Use truncation approach for large bitwidths
         scale = 2 ** fractional_bitwidth
+        self.scale = scale
 
-        # Ensure scale is reasonable
-        if scale <= 0 or scale > 1e9:
-            raise ValueError(f"Invalid scale computed: {scale} from bitwidth {fractional_bitwidth}")
+        # Truncate small values instead of scaling large
+        weight_frac = torch.where(
+            torch.abs(weight_frac) < 1/self.scale,
+            torch.zeros_like(weight_frac),
+            weight_frac
+        )
 
-        weight_frac_scaled = torch.round(weight_frac * scale)
+        # Quantize fractional part
+        weight_frac_truncated = torch.round(weight_frac * scale) / scale
+        weight = weight_int + weight_frac_truncated
 
-        # Clamp scaled values to prevent extreme values
-        weight_frac_scaled = torch.clamp(weight_frac_scaled, min=-1e6, max=1e6)
+        # Update the weight parameter data in-place to preserve parameter status
+        with torch.no_grad():
+            self.weight.data = weight.to(dtype)
 
         # Register as buffers so they move with the model during device dispatch
-        self.register_buffer('weight_int', weight_int, persistent=False)
-        self.register_buffer('weight_frac_scaled', weight_frac_scaled, persistent=False)
-        self.scale = scale  # Keep scale as a regular attribute (it's a scalar)
+        # self.register_buffer('weight_int', weight_int, persistent=False)
+        # self.register_buffer('weight_frac_truncated', weight_frac_truncated, persistent=False)
+        # self.register_buffer('scale', torch.tensor(scale), persistent=False)
 
-        self._preprocessed_weights = {
-            'weight_int': self.weight_int,
-            'weight_frac_scaled': self.weight_frac_scaled,
-            'scale': scale
-        }
+        # self._preprocessed_weights = {
+        #     'weight_int': self.weight_int,
+        #     'weight_frac_truncated': self.weight_frac_truncated,
+        #     'scale': scale
+        # }
 
         self._preprocessed = True
 
@@ -115,47 +104,54 @@ class NoisyLinear(nn.Linear):
         noise_config=None,
     ) -> Tensor:
         # Simple approach: weights must be preprocessed before forward
-        if not self._preprocessed or self._preprocessed_weights is None:
-            raise RuntimeError("NoisyLinear weights must be preprocessed before forward pass. Call preprocess_with_rotation() first.")
+        if not self._preprocessed:
+            raise RuntimeError("NoisyLinear weights must be preprocessed before forward pass. Call setup_noise() first.")
         # Use preprocessed weights (precise 4-term computation for fixed-point accuracy)
         # Use the registered buffers directly - they will be on the correct device
-        weight_int = self.weight_int
-        weight_frac_scaled = self.weight_frac_scaled
-        scale = self.scale
-
-        # Split input into integer and fractional parts for CKKS precision simulation
-        input_int = truncate_towards_zero(input)
+        # weight_int = self.weight_int
+        # weight_frac_scaled = self.weight_frac_scaled
+        # scale = self.scale
+        dtype = input.dtype
+        input = input.float()
+        input_int = torch.trunc(input)
         input_frac = input - input_int
-        input_frac_scaled = torch.round(input_frac * scale)
 
-        # Clamp scaled input to prevent extreme values
-        input_frac_scaled = torch.clamp(input_frac_scaled, min=-1e6, max=1e6)
+        input_frac = torch.where(
+            torch.abs(input_frac) < 1/self.scale,
+            torch.zeros_like(input_frac),
+            input_frac
+        )
 
-        # Precise 4-term computation with safety checks
-        term1 = nn.functional.linear(input_int, weight_int)
+        input_frac_truncated = torch.round(input_frac * self.scale) / self.scale
 
-        # Use safe division for terms 2 and 3
-        term2_num = nn.functional.linear(input_int, weight_frac_scaled)
-        term2 = safe_divide_with_rounding(term2_num, scale, scale/2)
+        input = input_int + input_frac_truncated
+        input = input.to(dtype)
 
-        term3_num = nn.functional.linear(input_frac_scaled, weight_int)
-        term3 = safe_divide_with_rounding(term3_num, scale, scale/2)
+        output = nn.functional.linear(input, self.weight)
 
-        # Special handling for term4 which involves scale^2
-        term4_num = nn.functional.linear(input_frac_scaled, weight_frac_scaled)
-        scale_squared = scale * scale
+        # # Precise 4-term computation for fixed-point arithmetic
+        # # Term 1: int * int (exact)
+        # term1 = nn.functional.linear(input_int, weight_int)
 
-        if scale_squared <= 0:
-            # If scale squared is problematic, skip this term
-            term4 = torch.zeros_like(term4_num)
-        else:
-            term4 = safe_divide_with_rounding(term4_num, scale_squared, scale_squared/2)
+        # # Term 2: int * frac_scaled / scale
+        # term2_scaled = nn.functional.linear(input_int, weight_frac_scaled)
+        # term2 = quantize_to_fixed_point(term2_scaled, scale, inverse=True)
+
+        # # Term 3: frac_scaled * int / scale
+        # term3_scaled = nn.functional.linear(input_frac_scaled, weight_int)
+        # term3 = quantize_to_fixed_point(term3_scaled, scale, inverse=True)
+
+        # # Term 4: frac_scaled * frac_scaled / scale^2
+        # term4_scaled = nn.functional.linear(input_frac_scaled, weight_frac_scaled)
+        # # Two-step dequantization for term4
+        # term4 = quantize_to_fixed_point(term4_scaled, scale, inverse=True)
+        # term4 = quantize_to_fixed_point(term4, scale, inverse=True)
 
         # Combine terms with overflow protection
-        output = term1 + term2 + term3 + term4
+        # output = term1 + term2 + term3 + term4
 
         # Check for NaN/Inf and replace with zeros if found
-        output = torch.where(torch.isfinite(output), output, torch.zeros_like(output))
+        # output = torch.where(torch.isfinite(output), output, torch.zeros_like(output))
 
         output = output.to(input.dtype)
 

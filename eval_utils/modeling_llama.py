@@ -342,7 +342,7 @@ class LlamaMLP(nn.Module):
         self.silu_noise_config = noise_config.get('silu', None)
         self.silu_noise_amplitude = self.silu_noise_config.std
         self.silu_noise_injector = self.silu_noise_config.injector
-        from train_utils.noisy_linear_debug import NoisyLinear
+        from train_utils.noisy_linear import NoisyLinear
         ## change gate_proj, up_proj, down_proj to NoisyLinear if not already, initialize weight with the existing weight
         if not isinstance(self.gate_proj, NoisyLinear):
             original_weight = self.gate_proj.weight.data.clone()
@@ -357,32 +357,32 @@ class LlamaMLP(nn.Module):
             if original_bias is not None:
                 self.gate_proj.bias = nn.Parameter(original_bias)
             self.gate_proj.setup_noise()
-        # if not isinstance(self.up_proj, NoisyLinear):
-        #     original_weight = self.up_proj.weight.data.clone()
-        #     original_bias = self.up_proj.bias.data.clone() if self.up_proj.bias is not None else None
-        #     self.up_proj = NoisyLinear(
-        #         self.hidden_size,
-        #         self.intermediate_size,
-        #         bias = original_bias is not None,
-        #         noise_config=noise_config['linear'],
-        #     )
-        #     self.up_proj.weight = nn.Parameter(original_weight)
-        #     if original_bias is not None:
-        #         self.up_proj.bias = nn.Parameter(original_bias)
-        #     self.up_proj.setup_noise()
-        # if not isinstance(self.down_proj, NoisyLinear):
-        #     original_weight = self.down_proj.weight.data.clone()
-        #     original_bias = self.down_proj.bias.data.clone() if self.down_proj.bias is not None else None
-        #     self.down_proj = NoisyLinear(
-        #         self.intermediate_size,
-        #         self.hidden_size,
-        #         bias = original_bias is not None,
-        #         noise_config=noise_config['linear'],
-        #     )
-        #     self.down_proj.weight = nn.Parameter(original_weight)
-        #     if original_bias is not None:
-        #         self.down_proj.bias = nn.Parameter(original_bias)
-        #     self.down_proj.setup_noise()
+        if not isinstance(self.up_proj, NoisyLinear):
+            original_weight = self.up_proj.weight.data.clone()
+            original_bias = self.up_proj.bias.data.clone() if self.up_proj.bias is not None else None
+            self.up_proj = NoisyLinear(
+                self.hidden_size,
+                self.intermediate_size,
+                bias = original_bias is not None,
+                noise_config=noise_config['linear'],
+            )
+            self.up_proj.weight = nn.Parameter(original_weight)
+            if original_bias is not None:
+                self.up_proj.bias = nn.Parameter(original_bias)
+            self.up_proj.setup_noise()
+        if not isinstance(self.down_proj, NoisyLinear):
+            original_weight = self.down_proj.weight.data.clone()
+            original_bias = self.down_proj.bias.data.clone() if self.down_proj.bias is not None else None
+            self.down_proj = NoisyLinear(
+                self.intermediate_size,
+                self.hidden_size,
+                bias = original_bias is not None,
+                noise_config=noise_config['linear'],
+            )
+            self.down_proj.weight = nn.Parameter(original_weight)
+            if original_bias is not None:
+                self.down_proj.bias = nn.Parameter(original_bias)
+            self.down_proj.setup_noise()
     def forward(self, x):
         if self.config.pretraining_tp > 1:
             raise ValueError("Pretraining TP > 1 not supported with noise injection.")
@@ -486,7 +486,7 @@ class LlamaAttention(nn.Module):
         self.softmax_noise_config = noise_config.get('softmax', None)
         self.softmax_noise_amplitude = self.softmax_noise_config.std
         self.softmax_noise_injector = self.softmax_noise_config.injector
-        from train_utils.noisy_linear_debug import NoisyLinear
+        from train_utils.noisy_linear import NoisyLinear
         ## change q_proj, k_proj, v_proj, o_proj to NoisyLinear if
         if not isinstance(self.q_proj, NoisyLinear):
             original_weight = self.q_proj.weight.data.clone()

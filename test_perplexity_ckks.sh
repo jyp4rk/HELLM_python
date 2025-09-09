@@ -30,7 +30,7 @@ python eval_perplexity_ckks.py \
     --activation_noise_std 0.0 \
     --N_bitwidth 16 \
     --hamming_weight 192 \
-    --delta_bitwidth 36 \
+    --delta_bitwidth 24 \
 
 # # Test 5: Hadamard rotation with small noise
 # echo ""

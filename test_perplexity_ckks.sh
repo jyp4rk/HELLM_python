@@ -3,7 +3,7 @@
 # Test script for eval_perplexity_ckks.py with various configurations
 # Tests different combinations of rotation modes and noise levels
 
-MODEL_PATH="/data/jypark/models--meta-llama--Llama-2-7b-hf/snapshots/01c7f73d771dfac7d292323805ebc428287df4f9"  # Update this path to your model
+MODEL_PATH="/scale/cal/home/jypark/models--meta-llama--Llama-2-7b-hf/snapshots/01c7f73d771dfac7d292323805ebc428287df4f9"  # Update this path to your model
 OUTPUT_DIR="./log/ckks_perplexity_tests"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 

@@ -11,15 +11,25 @@ from utils.train_utils import create_logger
 import utils.rotation_utils as rotation_utils
 import utils.model_utils as model_utils
 from utils.ckks_utils import inject_noise_model
-from utils.attribute_noise_injector import NoiseConfig, NoiseType, LinearLayerNoiseConfig
+from utils.attribute_noise_injector import (
+    NoiseConfig,
+    NoiseType,
+    LinearLayerNoiseConfig,
+)
 from utils.attribute_noise_injector import noise_injector
 from accelerate import infer_auto_device_map, dispatch_model
+
 
 def main():
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, default='llama-2-7b', help="Model name for tokenizer (e.g., 'llama-2-7b')")
+    parser.add_argument(
+        "--model_name",
+        type=str,
+        default="llama-2-7b",
+        help="Model name for tokenizer (e.g., 'llama-2-7b')",
+    )
     parser.add_argument("--model_path", type=str, required=True)
     parser.add_argument("--output_dir", default="./log/prefix_ppl", type=str)
     parser.add_argument("--ppl_seqlen", type=int, default=2048)
@@ -27,26 +37,54 @@ def main():
     parser.add_argument("--outlier_threshold", type=float, default=5.0)
     parser.add_argument("--activation_type", type=str, default="hidden_state")
     parser.add_argument("--calib_samples", type=int, default=64)
-    parser.add_argument("--rotation_mode", type=str, default="identity", choices=["identity", "hadamard"],
-                       help="Rotation matrix type for R1/R2 (identity or hadamard)")
-    parser.add_argument("--rmsnorm_noise_std", type=float, default=None,
-                       help="Noise std for RMSNorm layers")
-    parser.add_argument("--softmax_noise_std", type=float, default=None,
-                       help="Noise std for attention softmax")
-    parser.add_argument("--activation_noise_std", type=float, default=None,
-                       help="Noise std for SiLU/Swish activations")
     parser.add_argument(
-        "--max_memory", type=str, default="24GiB", help="The maximum memory of each GPU"
+        "--rotation_mode",
+        type=str,
+        default="identity",
+        choices=["identity", "hadamard"],
+        help="Rotation matrix type for R1/R2 (identity or hadamard)",
+    )
+    parser.add_argument(
+        "--rmsnorm_noise_std",
+        type=float,
+        default=None,
+        help="Noise std for RMSNorm layers",
+    )
+    parser.add_argument(
+        "--softmax_noise_std",
+        type=float,
+        default=None,
+        help="Noise std for attention softmax",
+    )
+    parser.add_argument(
+        "--activation_noise_std",
+        type=float,
+        default=None,
+        help="Noise std for SiLU/Swish activations",
+    )
+    parser.add_argument(
+        "--max_memory", type=str, default="40GiB", help="The maximum memory of each GPU"
     )
     # parser.add_argument("--linear_noise_enabled", action="store_true",
     #                    help="Enable noise injection for NoisyLinear layers")
-    parser.add_argument("--N_bitwidth", type=float, default=16,
-                       help="Polynomial degree for NoisyLinear noise")
-    parser.add_argument("--hamming_weight", type=float, default=192,
-                       help="Hamming_weight for NoisyLinear noise")
-    parser.add_argument("--delta_bitwidth", type=float, default=42,
-                       help="Delta bitwidth for NoisyLinear noise")
-
+    parser.add_argument(
+        "--N_bitwidth",
+        type=float,
+        default=16,
+        help="Polynomial degree for NoisyLinear noise",
+    )
+    parser.add_argument(
+        "--hamming_weight",
+        type=float,
+        default=192,
+        help="Hamming_weight for NoisyLinear noise",
+    )
+    parser.add_argument(
+        "--delta_bitwidth",
+        type=float,
+        default=42,
+        help="Delta bitwidth for NoisyLinear noise",
+    )
 
     args = parser.parse_args()
 
@@ -66,19 +104,16 @@ def main():
     model = LlamaForCausalLM.from_pretrained(
         args.model_path,
         config=config,
-        dtype=torch.float16,  # Changed from torch_dtype to dtype
-        device_map="cpu",  # Load on CPU first for controlled dispatch
-        trust_remote_code=True  # Added to use auto class and avoid GenerationMixin warning
+        torch_dtype=torch.float16,  # Changed from torch_dtype to dtype
+        device_map="auto",  # Load on CPU first for controlled dispatch
+        trust_remote_code=True,  # Added to use auto class and avoid GenerationMixin warning
     )
     if args.rotation_mode == "hadamard":
         # rotation_utils.fuse_layer_norms(model)
         # rotation_utils.rotate_model(model, "hadamard", online=False)
         model.half()
 
-    tokenizer = AutoTokenizer.from_pretrained(
-        args.model_path,
-        trust_remote_code=True
-    )
+    tokenizer = AutoTokenizer.from_pretrained(args.model_path, trust_remote_code=True)
 
     # # Initialize rotation matrices
     # logger.info(f"Initializing rotation matrices with mode: {args.rotation_mode}")
@@ -111,10 +146,10 @@ def main():
         rmsnorm_std = args.rmsnorm_noise_std
 
     if rmsnorm_std >= 0:
-        noise_configs['rmsnorm'] = NoiseConfig(
+        noise_configs["rmsnorm"] = NoiseConfig(
             noise_type=NoiseType.GAUSSIAN,
             std=rmsnorm_std,
-            injector = noise_injector,
+            injector=noise_injector,
         )
         logger.info(f"RMSNorm noise injection enabled with std: {rmsnorm_std}")
 
@@ -125,10 +160,10 @@ def main():
         softmax_std = args.softmax_noise_std
 
     if softmax_std >= 0:
-        noise_configs['softmax'] = NoiseConfig(
+        noise_configs["softmax"] = NoiseConfig(
             noise_type=NoiseType.GAUSSIAN,
             std=softmax_std,
-            injector = noise_injector,
+            injector=noise_injector,
         )
         logger.info(f"Softmax noise injection enabled with std: {softmax_std}")
 
@@ -139,17 +174,17 @@ def main():
         activation_std = args.activation_noise_std
 
     if activation_std >= 0:
-        noise_configs['silu'] = NoiseConfig(
+        noise_configs["silu"] = NoiseConfig(
             noise_type=NoiseType.GAUSSIAN,
             std=activation_std,
-            injector = noise_injector,
+            injector=noise_injector,
         )
         logger.info(f"Activation noise injection enabled with std: {activation_std}")
 
     # Configure NoisyLinear noise parameters for CKKS
     # N: Polynomial degree for CKKS encryption
     # hamming_weight: Number of non-zero coefficients in the secret key
-    N = 2 ** args.N_bitwidth
+    N = 2**args.N_bitwidth
     sqrt_Nh = np.sqrt(args.hamming_weight * N)
 
     # Calculate fractional bitwidth based on noise scale
@@ -158,14 +193,15 @@ def main():
     fractional_bitwidth = args.delta_bitwidth - log2_sqrt_Nh
 
     linear_noise_config = LinearLayerNoiseConfig(
-        sqrt_Nh = sqrt_Nh,
-        delta_bitwidth = args.delta_bitwidth,
-        fractional_bitwidth = fractional_bitwidth,
-        injector = noise_injector
+        sqrt_Nh=sqrt_Nh,
+        delta_bitwidth=args.delta_bitwidth,
+        fractional_bitwidth=fractional_bitwidth,
+        injector=noise_injector,
     )
-    logger.info(f"NoisyLinear noise configured: sqrt_Nh={sqrt_Nh:.2f}, delta_bitwidth={args.delta_bitwidth}, fractional_bitwidth={fractional_bitwidth}")
-    noise_configs['linear'] = linear_noise_config
-
+    logger.info(
+        f"NoisyLinear noise configured: sqrt_Nh={sqrt_Nh:.2f}, delta_bitwidth={args.delta_bitwidth}, fractional_bitwidth={fractional_bitwidth}"
+    )
+    noise_configs["linear"] = linear_noise_config
 
     # # Apply all noise configurations to model
     # if noise_configs or linear_noise_config:
@@ -205,42 +241,45 @@ def main():
     # Get calibration data for finding prefix tokens
     logger.info("Loading calibration data...")
     calib_loader, _ = get_loaders(
-        "wikitext2", tokenizer,
+        "wikitext2",
+        tokenizer,
         train_size=args.calib_samples,
         val_size=0,
         seed=args.seed,
-        seqlen=args.ppl_seqlen
+        seqlen=args.ppl_seqlen,
     )
 
     # Get prefix tokens using existing function
     logger.info("Finding prefix tokens...")
     from utils.prefix_cache import get_cached_prefixed_tokens
+
     if model.device.type == "cpu":
         original_device = "cpu"
         block_class_name = model.model.layers[0].__class__.__name__
         device_map = infer_auto_device_map(
-        model,
-        max_memory={i: args.max_memory for i in range(torch.cuda.device_count())},
-        no_split_module_classes=[block_class_name],
+            model,
+            max_memory={i: args.max_memory for i in range(torch.cuda.device_count())},
+            no_split_module_classes=[block_class_name],
         )
         model = dispatch_model(model, device_map=device_map)
     else:
         original_device = "cuda"
     prefixed_tokens = get_cached_prefixed_tokens(
-        calib_loader, model, tokenizer,
+        calib_loader,
+        model,
+        tokenizer,
         args.model_name,
-        outlier_threshold = args.outlier_threshold,
-        activation_type = args.activation_type,
-        cache_file = f'./cache/123.json'
+        outlier_threshold=args.outlier_threshold,
+        activation_type=args.activation_type,
+        cache_file=f"./cache/123.json",
     )
     logger.info(f"outlier_threshold: {args.outlier_threshold}")
     print(
-            f"outlier threshold {args.outlier_threshold}, get {len(prefixed_tokens)} prefixed tokens; token id:{prefixed_tokens}; text: {tokenizer.decode(prefixed_tokens)}"
+        f"outlier threshold {args.outlier_threshold}, get {len(prefixed_tokens)} prefixed tokens; token id:{prefixed_tokens}; text: {tokenizer.decode(prefixed_tokens)}"
     )
     if original_device == "cpu":
         model = model.cpu()
 
-    # Inject noise BEFORE final model dispatch
     inject_noise_model(model, noise_configs)
     logger.info("Noise injection complete")
 
@@ -262,13 +301,12 @@ def main():
         outputs = model(prefix_input, use_cache=True)
         prefixed_key_values = outputs.past_key_values
 
-
     # Test perplexity with prefix KV cache
     logger.info("Testing perplexity with prefix conditioning...")
     datasets = ["wikitext2"]  # Only use wikitext2 to avoid C4 loading issues
     prefix_ppl = test_ppl(args, model, tokenizer, None, datasets)
     for dataset in prefix_ppl:
-        logger.info(f'{dataset} perplexity (with prefix): {prefix_ppl[dataset]:.2f}')
+        logger.info(f"{dataset} perplexity (with prefix): {prefix_ppl[dataset]:.2f}")
     # # Test WITHOUT prefix (baseline)
     # logger.info("\n=== Baseline (no prefix) ===")
     # baseline_ppl = test_ppl(args, model, tokenizer, None, datasets)
@@ -281,6 +319,7 @@ def main():
     #     diff = prefix_ppl[dataset] - baseline_ppl[dataset]
     #     pct_change = (diff / baseline_ppl[dataset]) * 100
     #     logger.info(f'{dataset}: {baseline_ppl[dataset]:.2f} → {prefix_ppl[dataset]:.2f} (Δ={diff:.2f}, {pct_change:+.1f}%)')
+
 
 if __name__ == "__main__":
     main()

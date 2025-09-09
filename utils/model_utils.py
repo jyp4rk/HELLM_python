@@ -9,7 +9,7 @@ import os
 import logging
 from transformers.cache_utils import DynamicCache
 import sys
-
+from eval_utils.modeling_llama import LlamaForCausalLM as LlamaForCausalLM_custom
 OPT_MODEL = transformers.models.opt.modeling_opt.OPTForCausalLM
 OPT_LAYER = transformers.models.opt.modeling_opt.OPTDecoderLayer
 OPT_NORM = torch.nn.LayerNorm
@@ -31,6 +31,8 @@ INTERNLM2_NORM = None
 def model_type_extractor(model):
     if isinstance(model, LLAMA_MODEL):
         return LLAMA_MODEL
+    elif isinstance(model, LlamaForCausalLM_custom):
+        return LLAMA_MODEL
     elif isinstance(model, OPT_MODEL):
         return OPT_MODEL
     elif isinstance(model, MISTRAL_MODEL):
@@ -47,7 +49,7 @@ def model_type_extractor(model):
         raise ValueError(f'Unknown model type {model}')
 
 def skip(*args, **kwargs):
-    # This is a helper function to save time during the initialization! 
+    # This is a helper function to save time during the initialization!
     pass
 
 def get_rope_function_name(model):
@@ -108,6 +110,8 @@ def get_model(
 def get_model_type(model):
     if isinstance(model, LLAMA_MODEL):
         return LLAMA_MODEL
+    elif isinstance(model, LlamaForCausalLM_custom):
+        return LLAMA_MODEL
     elif isinstance(model, OPT_MODEL):
         return OPT_MODEL
     elif isinstance(model, MISTRAL_MODEL):
@@ -130,9 +134,9 @@ def get_norm_type(model):
         return INTERNLM2_NORM
     else:
         raise ValueError(f'Unknown model type {model}')
-    
-    
-    
+
+
+
 # def get_embeddings(model, model_type) -> list[torch.nn.Module]:
 def get_embeddings(model, model_type):
     if model_type == LLAMA_MODEL or model_type == MISTRAL_MODEL or model_type == QWEN2_MODEL:
@@ -152,7 +156,7 @@ def get_transformer_layers(model, model_type):
         return [layer for layer in model.model.decoder.layers]
     else:
         raise ValueError(f'Unknown model type {model_type}')
-    
+
 
 
 def get_lm_head(model, model_type):
@@ -353,7 +357,7 @@ def mv_kv_cache(key_values, model=None, dev=None):
             key_values[layer_index][0] = key_values[layer_index][0].to(block_dev)
             key_values[layer_index][1] = key_values[layer_index][1].to(block_dev)
             key_values[layer_index] = tuple(key_values[layer_index])
-            
+
     if dev is not None:
         for layer_index in range(len(key_values)):
             key_values[layer_index] = list(key_values[layer_index])
@@ -387,7 +391,7 @@ def kv_cache_repeat(key_values, bs):
         bs_key_values[layer_index][1] = bs_key_values[layer_index][1].repeat_interleave(bs, dim=0)
         bs_key_values[layer_index] = tuple(bs_key_values[layer_index])
     return bs_key_values
-    
+
 
 class WrappedPrefixCausalLM(torch.nn.Module):
     def __init__(self, model, prefixed_key_values):
@@ -400,7 +404,7 @@ class WrappedPrefixCausalLM(torch.nn.Module):
         self.vocab_size = model.vocab_size
         self.prefixed_key_values = prefixed_key_values
         self.bs_prefixed_key_values = prefixed_key_values
-    
+
     def tie_weights(self):
         self.model.tie_weights()
 

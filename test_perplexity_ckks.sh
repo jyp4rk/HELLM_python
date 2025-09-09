@@ -24,7 +24,7 @@ python eval_perplexity_ckks.py \
     --outlier_threshold 9.0 \
     --activation_type hidden_state \
     --calib_samples 16 \
-    --rotation_mode identity \
+    --rotation_mode hadamard \
     --rmsnorm_noise_std 0.0 \
     --softmax_noise_std 0.0 \
     --activation_noise_std 0.0 \

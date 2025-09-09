@@ -50,7 +50,7 @@ from transformers.utils import (
 )
 from transformers.models.llama.configuration_llama import LlamaConfig
 
-# from train_utils.quant_linear import QuantizeLinear
+from train_utils.quant_linear import QuantizeLinear
 from utils.streaming_outlier_loss_fixed import StreamingOutlierTracker, create_streaming_tracker
 
 
@@ -1358,9 +1358,9 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
             tracker_config = {}
             if loss_type == 'cvar':
                 tracker_config['alpha'] = getattr(config, 'outlier_alpha', 0.99)
-                tracker_config['initial_threshold'] = getattr(config, 'outlier_threshold', 4.0)
+                tracker_config['initial_threshold'] = getattr(config, 'outlier_threshold', 5.0)
             elif loss_type == 'hinged':
-                tracker_config['target_threshold'] = getattr(config, 'outlier_threshold', 4.0)
+                tracker_config['target_threshold'] = getattr(config, 'outlier_threshold', 5.0)
 
             # Create streaming tracker
             self._streaming_tracker = create_streaming_tracker(
@@ -1372,19 +1372,75 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
             if hasattr(self, 'device'):
                 self._streaming_tracker.streaming_loss = self._streaming_tracker.streaming_loss.to(self.device)
 
-            # Define comprehensive layer tracking scope
+            # Define comprehensive layer tracking scope - ALL LAYERS for complete coverage
             expected_layers = [
                 "final_hidden_states",  # Main target: post-R1 rotation
             ]
+
+            # Track ALL layers - no sampling for crucial comprehensive outlier loss
             num_layers = getattr(config, 'num_hidden_layers', 32)
+
+            # Add ALL layers for complete outlier coverage (0 through num_layers-1)
             for i in range(num_layers):
                 expected_layers.extend([
+                    # R1 rotation tracking points (existing)
                     f"layer_{i}_attn_output",
                     f"layer_{i}_mlp_output",
+
+                    # R2 rotation tracking points (only value_proj - output_proj R2 canceled out)
                     f"layer_{i}_r2_value_proj"
                 ])
 
+            # No need to remove duplicates since we're tracking all layers systematically
+
+            # Use factory pattern to create appropriate loss system
+            loss_type = getattr(config, 'outlier_loss_type', 'cvar')
+
+            # Custom configuration based on config attributes and loss type
+            custom_config = {}
+
+            # Loss-type-specific configuration handling
+            if loss_type == 'cvar':
+                if hasattr(config, 'outlier_alpha'):
+                    custom_config['alpha'] = config.outlier_alpha
+                if hasattr(config, 'outlier_threshold'):
+                    custom_config['initial_threshold'] = config.outlier_threshold
+
+                # Enhanced CVaR configuration from environment variables
+                import os
+                if os.getenv('CVAR_THRESHOLD_LR_SCALE'):
+                    custom_config['threshold_lr_scale'] = float(os.getenv('CVAR_THRESHOLD_LR_SCALE'))
+                if os.getenv('CVAR_EMA_DECAY'):
+                    custom_config['ema_decay'] = float(os.getenv('CVAR_EMA_DECAY'))
+            elif loss_type == 'hinged':
+                if hasattr(config, 'outlier_threshold'):
+                    custom_config['target_threshold'] = config.outlier_threshold
+
+
+        # Initialize comprehensive layer-wise outlier tracking infrastructure
+        if self.use_outlier_loss:
             self._initialize_layer_tracking(config)
+            # Initialize streaming tracker with same config as _streaming_tracker
+            if self._streaming_tracker is not None:
+                loss_type = getattr(config, 'outlier_loss_type', 'cvar')
+                if loss_type == 'cvar':
+                    tracker_config = {
+                        'alpha': getattr(config, 'outlier_loss_alpha', 0.99),
+                        'initial_threshold': getattr(config, 'outlier_threshold', 5.0)
+                    }
+                elif loss_type == 'hinged':
+                    tracker_config = {
+                        'target_threshold': getattr(config, 'outlier_threshold', 5.0),
+                        'hinge_power': 2,
+                        'initial_threshold': 10.0
+                    }
+                else:
+                    tracker_config = {}
+
+                self._streaming_tracker = create_streaming_tracker(
+                    loss_type=loss_type,
+                    **tracker_config
+                )
 
         # Initialize weights and apply final processing
         self.post_init()
@@ -1405,7 +1461,7 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
                 layer._track_layer_outliers = True
                 layer._layer_outlier_tracker = self._create_layer_tracker()
 
-                # Propagate tracking to sublayers (attention and MLP)
+                # Propagate tracking to sublayers (attention and MLP) - CRITICAL for 97-point coverage
                 layer.self_attn._track_layer_outliers = True
                 layer.self_attn._layer_outlier_tracker = self._create_layer_tracker()
                 layer.mlp._track_layer_outliers = True
@@ -1417,7 +1473,7 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
             "final_hidden_states": 1.0,  # Primary target maintains standard weight
         }
 
-        # Use uniform weights for ALL layers
+        # Use uniform weights for ALL layers - comprehensive coverage is crucial
         uniform_weight = 1.0  # Same weight as final hidden states
 
         num_layers = getattr(config, 'num_hidden_layers', 32)
@@ -1605,10 +1661,10 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
 
                 # Get scaling factor from environment or use defaults based on loss type and precision
                 import os
-                default_scale = float(os.getenv('OUTLIER_LOSS_SCALE', '1'))  # 10x larger than before
+                default_scale = float(os.getenv('OUTLIER_LOSS_SCALE', '0.1'))  # 10x larger than before
 
                 if loss_type == 'cvar':
-                    # CVaR loss typically ranges 0-40, scale to 0-4.0 range for stronger signal
+                    # CVaR loss typically ranges 0-50, scale to 0-5.0 range for stronger signal
                     scale_factor = float(os.getenv('CVAR_LOSS_SCALE', str(default_scale)))
                 elif loss_type == 'hinged':
                     # Hinged loss typically ranges 0-20, scale to 0-2.0 range for stronger signal

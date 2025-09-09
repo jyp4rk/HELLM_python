@@ -244,7 +244,7 @@ def get_loaders(
 
 
 @torch.no_grad()
-def test_ppl(args, model, tokenizer,prefixed_key_values=None, datasets=['wikitext2']):
+def test_ppl(args, model, tokenizer, prefixed_key_values=None, datasets=['wikitext2']):
     results = {}
     for dataset in datasets:
         testloader = get_loaders(

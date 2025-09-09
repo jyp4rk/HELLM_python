@@ -49,6 +49,7 @@ def bake_mean_into_linear(linear: torch.nn.Linear) -> None:
 def fuse_layer_norms(model):
 
     model_type = model_utils.get_model_type(model)
+    # model_type = model_utils.LLAMA_MODEL
 
     kwargs = {'model': model, 'model_type': model_type}
 

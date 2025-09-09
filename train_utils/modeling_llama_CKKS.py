@@ -290,24 +290,24 @@ class LlamaMLP(nn.Module):
         self._layer_idx = layer_idx  # Store layer index for outlier tracking
         self.hidden_size = config.hidden_size
         self.intermediate_size = config.intermediate_size
-        self.gate_proj = nn.Linear(
-            self.hidden_size, self.intermediate_size, bias=config.mlp_bias
-        )
-        self.up_proj = nn.Linear(
-            self.hidden_size, self.intermediate_size, bias=config.mlp_bias
-        )
-        self.down_proj = nn.Linear(
-            self.intermediate_size, self.hidden_size, bias=config.mlp_bias
-        )
-        # self.gate_proj = NoisyLinear(
-        #     self.hidden_size, self.intermediate_size, rotation_config='r1w', bias=config.mlp_bias
+        # self.gate_proj = nn.Linear(
+        #     self.hidden_size, self.intermediate_size, bias=config.mlp_bias
         # )
-        # self.up_proj = NoisyLinear(
-        #     self.hidden_size, self.intermediate_size, rotation_config='r1w', bias=config.mlp_bias
+        # self.up_proj = nn.Linear(
+        #     self.hidden_size, self.intermediate_size, bias=config.mlp_bias
         # )
-        # self.down_proj = NoisyLinear(
-        #     self.intermediate_size, self.hidden_size, rotation_config='wr1t', bias=config.mlp_bias
+        # self.down_proj = nn.Linear(
+        #     self.intermediate_size, self.hidden_size, bias=config.mlp_bias
         # )
+        self.gate_proj = NoisyLinear(
+            self.hidden_size, self.intermediate_size, rotation_config='r1w', bias=config.mlp_bias
+        )
+        self.up_proj = NoisyLinear(
+            self.hidden_size, self.intermediate_size, rotation_config='r1w', bias=config.mlp_bias
+        )
+        self.down_proj = NoisyLinear(
+            self.intermediate_size, self.hidden_size, rotation_config='wr1t', bias=config.mlp_bias
+        )
         self.act_fn = ACT2FN[config.hidden_act]
 
 
@@ -348,9 +348,9 @@ class LlamaMLP(nn.Module):
 
         down_proj = self.down_proj(
             gate_out * up_out,
-            # R1,
-            # transpose=True,
-            # noise_config=noise_config
+            R1,
+            transpose=True,
+            noise_config=noise_config
         )
 
         # Track R1 outliers after down projection (pre-residual)
@@ -404,40 +404,40 @@ class LlamaAttention(nn.Module):
         self.rope_theta = config.rope_theta
         self.is_causal = True
 
-        self.q_proj = nn.Linear(
-            self.hidden_size, self.num_heads * self.head_dim, bias=config.attention_bias
-        )
-        self.k_proj = nn.Linear(
-            self.hidden_size,
-            self.num_key_value_heads * self.head_dim,
-            bias=config.attention_bias,
-        )
-        self.v_proj = nn.Linear(
-            self.hidden_size,
-            self.num_key_value_heads * self.head_dim,
-            bias=config.attention_bias,
-        )
-        self.o_proj = nn.Linear(
-            self.num_heads * self.head_dim, self.hidden_size, bias=config.attention_bias
-        )
-        # self.q_proj = NoisyLinear(
-        #     self.hidden_size, self.num_heads * self.head_dim,
-        #     rotation_config='r1w', bias=config.attention_bias
+        # self.q_proj = nn.Linear(
+        #     self.hidden_size, self.num_heads * self.head_dim, bias=config.attention_bias
         # )
-        # self.k_proj = NoisyLinear(
+        # self.k_proj = nn.Linear(
         #     self.hidden_size,
         #     self.num_key_value_heads * self.head_dim,
-        #     rotation_config='r1w', bias=config.attention_bias,
+        #     bias=config.attention_bias,
         # )
-        # self.v_proj = NoisyLinear(
+        # self.v_proj = nn.Linear(
         #     self.hidden_size,
         #     self.num_key_value_heads * self.head_dim,
-        #     rotation_config='r1wr2', bias=config.attention_bias,
+        #     bias=config.attention_bias,
         # )
-        # self.o_proj = NoisyLinear(
-        #     self.hidden_size, self.hidden_size,
-        #     rotation_config='r2wr1t', bias=config.attention_bias
+        # self.o_proj = nn.Linear(
+        #     self.num_heads * self.head_dim, self.hidden_size, bias=config.attention_bias
         # )
+        self.q_proj = NoisyLinear(
+            self.hidden_size, self.num_heads * self.head_dim,
+            rotation_config='r1w', bias=config.attention_bias
+        )
+        self.k_proj = NoisyLinear(
+            self.hidden_size,
+            self.num_key_value_heads * self.head_dim,
+            rotation_config='r1w', bias=config.attention_bias,
+        )
+        self.v_proj = NoisyLinear(
+            self.hidden_size,
+            self.num_key_value_heads * self.head_dim,
+            rotation_config='r1wr2t', bias=config.attention_bias,
+        )
+        self.o_proj = NoisyLinear(
+            self.hidden_size, self.hidden_size,
+            rotation_config='r2wr1t', bias=config.attention_bias
+        )
         self.R2 = None
 
         # TODO (joao): remove in v4.46 (RoPE is computed in the model, not in the decoder layers)
@@ -592,8 +592,8 @@ class LlamaAttention(nn.Module):
         #         ]
         #     )
         # else:
-        # attn_output = self.o_proj(attn_output, R1, R2=self.R2.weight, transpose=True, noise_config=noise_config)
-        attn_output = self.o_proj(attn_output)
+        attn_output = self.o_proj(attn_output, R1, R2=self.R2.weight, transpose=True, noise_config=noise_config)
+        # attn_output = self.o_proj(attn_output)
 
         # Track R1 outliers after output projection (pre-residual)
         if hasattr(self, '_track_layer_outliers') and self._track_layer_outliers:
@@ -887,8 +887,8 @@ class LlamaSdpaAttention(LlamaAttention):
         attn_output = attn_output.transpose(1, 2).contiguous()
         attn_output = attn_output.view(bsz, q_len, -1)
 
-        # attn_output = self.o_proj(attn_output, R1, R2=self.R2.weight, transpose=True, noise_config=noise_config)
-        attn_output = self.o_proj(attn_output)
+        attn_output = self.o_proj(attn_output, R1, R2=self.R2.weight, transpose=True, noise_config=noise_config)
+        # attn_output = self.o_proj(attn_output)
 
 
         # Track R1 outliers after output projection (pre-residual, SDPA Attention)
@@ -1180,7 +1180,7 @@ class LlamaModel(LlamaPreTrainedModel):
         cache_position: Optional[torch.LongTensor] = None,
         R1=None,
     ) -> Union[Tuple, BaseModelOutputWithPast]:
-        R1=None
+        # R1=None
         output_attentions = (
             output_attentions
             if output_attentions is not None
@@ -1211,6 +1211,8 @@ class LlamaModel(LlamaPreTrainedModel):
             inputs_embeds = self.embed_tokens(input_ids)
         if R1 is not None:
             dtype = inputs_embeds.dtype
+            device = inputs_embeds.device
+            R1.to(device)
             inputs_embeds = (inputs_embeds.to(torch.float64) @ R1.to(torch.float64)).to(
                 dtype
             )
@@ -1391,7 +1393,7 @@ class LlamaModel(LlamaPreTrainedModel):
         return causal_mask
 
 
-class LlamaForCausalLM(LlamaPreTrainedModel):
+class LlamaForCausalLMCKKS(LlamaPreTrainedModel):
     _tied_weights_keys = ["lm_head.weight"]
 
     def __init__(self, config):

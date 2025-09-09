@@ -51,7 +51,6 @@ from transformers.utils import (
 )
 from transformers.models.llama.configuration_llama import LlamaConfig
 
-
 logger = logging.get_logger(__name__)
 
 _CONFIG_FOR_DOC = "LlamaConfig"
@@ -129,13 +128,25 @@ class LlamaRMSNorm(nn.Module):
         super().__init__()
         self.weight = nn.Parameter(torch.ones(hidden_size))
         self.variance_epsilon = eps
+        self.noise_inject = False
+
+    def setup_noise_injection(self, noise_config):
+        self.noise_inject = True
+        self.noise_config = noise_config.get('rmsnorm', None)
+        self.noise_amplitude = self.noise_config.std
+        self.noise_injector = self.noise_config.injector
 
     def forward(self, hidden_states):
         input_dtype = hidden_states.dtype
         hidden_states = hidden_states.to(torch.float32)
         variance = hidden_states.pow(2).mean(-1, keepdim=True)
         hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
-        return self.weight * hidden_states.to(input_dtype)
+        output = self.weight * hidden_states.to(input_dtype).to(self.weight.device)
+        if self.noise_inject:
+            noise = self.noise_injector(output, self.noise_amplitude)
+            output = output + noise
+        return output
+
 
     def extra_repr(self):
         return f"{tuple(self.weight.shape)}, eps={self.variance_epsilon}"
@@ -143,7 +154,7 @@ class LlamaRMSNorm(nn.Module):
 
 ALL_LAYERNORM_LAYERS.append(LlamaRMSNorm)
 
-
+## noise injection skipped for now
 class LlamaRotaryEmbedding(nn.Module):
     def __init__(
         self,
@@ -225,7 +236,7 @@ class LlamaRotaryEmbedding(nn.Module):
         inv_freq_expanded = (
             self.inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1)
         )
-        position_ids_expanded = position_ids[:, None, :].float()
+        position_ids_expanded = position_ids[:, None, :].float().to(self.inv_freq.device)
         # Force float32 (see https://github.com/huggingface/transformers/pull/29285)
         device_type = x.device.type
         device_type = (
@@ -323,7 +334,55 @@ class LlamaMLP(nn.Module):
             self.intermediate_size, self.hidden_size, bias=config.mlp_bias
         )
         self.act_fn = ACT2FN[config.hidden_act]
+        self.noise_inject = False
 
+
+    def setup_noise_injection(self, noise_config):
+        self.noise_inject = True
+        self.silu_noise_config = noise_config.get('silu', None)
+        self.silu_noise_amplitude = self.silu_noise_config.std
+        self.silu_noise_injector = self.silu_noise_config.injector
+        from train_utils.noisy_linear import NoisyLinear
+        ## change gate_proj, up_proj, down_proj to NoisyLinear if not already, initialize weight with the existing weight
+        if not isinstance(self.gate_proj, NoisyLinear):
+            original_weight = self.gate_proj.weight.data.clone()
+            original_bias = self.gate_proj.bias.data.clone() if self.gate_proj.bias is not None else None
+            self.gate_proj = NoisyLinear(
+                self.hidden_size,
+                self.intermediate_size,
+                bias = original_bias is not None,
+                noise_config=noise_config['linear'],
+            )
+            self.gate_proj.weight = nn.Parameter(original_weight)
+            if original_bias is not None:
+                self.gate_proj.bias = nn.Parameter(original_bias)
+            self.gate_proj.setup_noise()
+        if not isinstance(self.up_proj, NoisyLinear):
+            original_weight = self.up_proj.weight.data.clone()
+            original_bias = self.up_proj.bias.data.clone() if self.up_proj.bias is not None else None
+            self.up_proj = NoisyLinear(
+                self.hidden_size,
+                self.intermediate_size,
+                bias = original_bias is not None,
+                noise_config=noise_config['linear'],
+            )
+            self.up_proj.weight = nn.Parameter(original_weight)
+            if original_bias is not None:
+                self.up_proj.bias = nn.Parameter(original_bias)
+            self.up_proj.setup_noise()
+        if not isinstance(self.down_proj, NoisyLinear):
+            original_weight = self.down_proj.weight.data.clone()
+            original_bias = self.down_proj.bias.data.clone() if self.down_proj.bias is not None else None
+            self.down_proj = NoisyLinear(
+                self.intermediate_size,
+                self.hidden_size,
+                bias = original_bias is not None,
+                noise_config=noise_config['linear'],
+            )
+            self.down_proj.weight = nn.Parameter(original_weight)
+            if original_bias is not None:
+                self.down_proj.bias = nn.Parameter(original_bias)
+            self.down_proj.setup_noise()
     def forward(self, x):
         if self.config.pretraining_tp > 1:
             slice = self.intermediate_size // self.config.pretraining_tp
@@ -353,7 +412,11 @@ class LlamaMLP(nn.Module):
             ]
             down_proj = sum(down_proj)
         else:
-            down_proj = self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
+            gate_out = self.act_fn(self.gate_proj(x))
+            if self.noise_inject:
+                noise = self.silu_noise_injector(gate_out, self.silu_noise_amplitude)
+                gate_out = gate_out + noise
+            down_proj = self.down_proj(self.up_proj(x) * gate_out)
 
         return down_proj
 
@@ -395,6 +458,7 @@ class LlamaAttention(nn.Module):
         self.max_position_embeddings = config.max_position_embeddings
         self.rope_theta = config.rope_theta
         self.is_causal = True
+        self.noise_inject = False
 
         self.q_proj = nn.Linear(
             self.hidden_size, self.num_heads * self.head_dim, bias=config.attention_bias
@@ -415,6 +479,67 @@ class LlamaAttention(nn.Module):
 
         # TODO (joao): remove in v4.46 (RoPE is computed in the model, not in the decoder layers)
         self.rotary_emb = LlamaRotaryEmbedding(config=self.config)
+
+    def setup_noise_injection(self, noise_config):
+        self.noise_inject = True
+        self.softmax_noise_config = noise_config.get('softmax', None)
+        self.softmax_noise_amplitude = self.softmax_noise_config.std
+        self.softmax_noise_injector = self.softmax_noise_config.injector
+        from train_utils.noisy_linear import NoisyLinear
+        ## change q_proj, k_proj, v_proj, o_proj to NoisyLinear if
+        if not isinstance(self.q_proj, NoisyLinear):
+            original_weight = self.q_proj.weight.data.clone()
+            original_bias = self.q_proj.bias.data.clone() if self.q_proj.bias is not None else None
+            self.q_proj = NoisyLinear(
+                self.hidden_size,
+                self.num_heads * self.head_dim,
+                bias = original_bias is not None,
+                noise_config=noise_config['linear'],
+            )
+            self.q_proj.weight = nn.Parameter(original_weight)
+            if original_bias is not None:
+                self.q_proj.bias = nn.Parameter(original_bias)
+            self.q_proj.setup_noise()
+        if not isinstance(self.k_proj, NoisyLinear):
+            original_weight = self.k_proj.weight.data.clone()
+            original_bias = self.k_proj.bias.data.clone() if self.k_proj.bias is not None else None
+            self.k_proj = NoisyLinear(
+                self.hidden_size,
+                self.num_key_value_heads * self.head_dim,
+                bias = original_bias is not None,
+                noise_config=noise_config['linear'],
+            )
+            self.k_proj.weight = nn.Parameter(original_weight)
+            if original_bias is not None:
+                self.k_proj.bias = nn.Parameter(original_bias)
+            self.k_proj.setup_noise()
+        if not isinstance(self.v_proj, NoisyLinear):
+            original_weight = self.v_proj.weight.data.clone()
+            original_bias = self.v_proj.bias.data.clone() if self.v_proj.bias is not None else None
+            self.v_proj = NoisyLinear(
+                self.hidden_size,
+                self.num_key_value_heads * self.head_dim,
+                bias = original_bias is not None,
+                noise_config=noise_config['linear']
+            )
+            self.v_proj.weight = nn.Parameter(original_weight)
+            if original_bias is not None:
+                self.v_proj.bias = nn.Parameter(original_bias)
+            self.v_proj.setup_noise()
+        if not isinstance(self.o_proj, NoisyLinear):
+            original_weight = self.o_proj.weight.data.clone()
+            original_bias = self.o_proj.bias.data.clone() if self.o_proj.bias is not None else None
+            self.o_proj = NoisyLinear(
+                self.num_heads * self.head_dim,
+                self.hidden_size,
+                bias = original_bias is not None,
+                noise_config=noise_config['linear'],
+            )
+            self.o_proj.weight = nn.Parameter(original_weight)
+            if original_bias is not None:
+                self.o_proj.bias = nn.Parameter(original_bias)
+            self.o_proj.setup_noise()
+
 
     def forward(
         self,
@@ -507,7 +632,7 @@ class LlamaAttention(nn.Module):
             attn_weights = attn_weights + causal_mask
 
         # Store pre-softmax weights if requested (for attention sink analysis)
-    if hasattr(self, "capture_pre_softmax") and self.capture_pre_softmax:
+        if hasattr(self, "capture_pre_softmax") and self.capture_pre_softmax:
             if not hasattr(self, "pre_softmax_weights"):
                 self.pre_softmax_weights = []
             self.pre_softmax_weights.append(attn_weights.detach().clone())
@@ -519,7 +644,12 @@ class LlamaAttention(nn.Module):
         attn_weights = nn.functional.dropout(
             attn_weights, p=self.attention_dropout, training=self.training
         )
+        if self.noise_inject:
+            noise = self.softmax_noise_injector(attn_weights, self.softmax_noise_amplitude)
+            attn_weights = attn_weights + noise
+
         attn_output = torch.matmul(attn_weights, value_states)
+
 
         if attn_output.size() != (bsz, self.num_heads, q_len, self.head_dim):
             raise ValueError(
@@ -794,6 +924,10 @@ class LlamaSdpaAttention(LlamaAttention):
             attn_weights = nn.functional.dropout(
                 attn_weights, p=self.attention_dropout, training=self.training
             )
+            if self.noise_inject:
+                noise = self.softmax_noise_injector(attn_weights, self.softmax_noise_amplitude)
+                attn_weights = attn_weights + noise
+
             attn_output = torch.matmul(attn_weights, value_states)
         else:
             # We dispatch to SDPA's Flash Attention or Efficient kernels via this `is_causal` if statement instead of an inline conditional assignment

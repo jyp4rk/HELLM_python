@@ -20,10 +20,16 @@ class NoiseType(Enum):
     UNIFORM = "uniform"
 
 @dataclass
+class LinearLayerNoiseConfig:
+    sqrt_Nh: float
+    delta_bitwidth: int
+    fractional_bitwidth: int
+    injector: Callable[[torch.Tensor, float], torch.Tensor]
+
+@dataclass
 class NoiseConfig:
     """Configuration for noise injection"""
     noise_type: NoiseType = NoiseType.GAUSSIAN
-    enabled: bool = True
 
     # Gaussian noise parameters
     mean: float = 0.0
@@ -32,6 +38,15 @@ class NoiseConfig:
     # Uniform noise parameters
     low: float = None   # Will use -amplitude if None
     high: float = None  # Will use +amplitude if None
+
+    injector: Callable[[torch.Tensor, float], torch.Tensor] = None
+
+def noise_injector(tensor: torch.Tensor, amplitude: float) -> torch.Tensor:
+    """Generate noise matching tensor shape according to config"""
+    std = amplitude
+    return torch.normal(0, std, size=tensor.shape,
+                          device=tensor.device, dtype=tensor.dtype)
+
 
 class AttributeNoiseInjector:
 

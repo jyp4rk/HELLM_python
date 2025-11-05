@@ -5,7 +5,7 @@ Test script for prefix token cache functionality
 
 import sys
 import logging
-from utils.prefix_cache import PrefixTokenCache
+from src.utils.prefix_cache import PrefixTokenCache
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')

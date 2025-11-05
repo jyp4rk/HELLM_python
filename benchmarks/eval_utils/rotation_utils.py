@@ -14,14 +14,14 @@ import math
 import torch
 import tqdm
 
-from utils import monkeypatch, quant_utils, utils
-from utils.hadamard_utils import (
+from src.utils import monkeypatch, quant_utils, utils
+from src.utils.hadamard_utils import (
     apply_exact_had_to_linear,
     is_pow2,
     random_hadamard_matrix,
 )
-from utils.utils import HadamardTransform
-from utils.hadamard_utils import (
+from src.utils.utils import HadamardTransform
+from src.utils.hadamard_utils import (
     get_hadK,
     matmul_hadU_cuda,
     matmul_hadU_cuda_invertible_inverse,

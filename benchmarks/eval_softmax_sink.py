@@ -3,11 +3,11 @@ import numpy as np
 import torch
 from pathlib import Path
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from utils.data_utils import test_ppl,get_loaders
-from utils.stat_utils import get_prefixed_tokens
-from utils.train_utils import create_logger
-from utils.sink_utils import run_complete_sink_analysis
-from eval_utils.modeling_llama import LlamaForCausalLM
+from src.utils.data_utils import test_ppl,get_loaders
+from src.utils.stat_utils import get_prefixed_tokens
+from src.utils.train_utils import create_logger
+from src.utils.sink_utils import run_complete_sink_analysis
+from benchmarks.eval_utils.modeling_llama import LlamaForCausalLM
 
 
 def main():

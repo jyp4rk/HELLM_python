@@ -11,7 +11,7 @@
 import transformers
 
 from train_utils import apply_r3_r4, rtn_utils
-from utils import fuse_norm_utils, hadamard_utils, quant_utils, utils
+from src.utils import fuse_norm_utils, hadamard_utils, quant_utils, utils
 
 
 def prepare_model(args, model):

@@ -12,8 +12,8 @@ import torch
 import transformers
 
 from eval_utils import gptq_utils, rotation_utils
-from utils import data_utils, fuse_norm_utils, hadamard_utils, quant_utils, utils
-from utils.convert_to_executorch import (
+from src.utils import data_utils, fuse_norm_utils, hadamard_utils, quant_utils, utils
+from src.utils.convert_to_executorch import (
     sanitize_checkpoint_from_spinquant,
     write_model_llama,
 )

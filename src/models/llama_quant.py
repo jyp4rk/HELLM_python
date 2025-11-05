@@ -50,8 +50,8 @@ from transformers.utils import (
 )
 from transformers.models.llama.configuration_llama import LlamaConfig
 
-from train_utils.quant_linear import QuantizeLinear
-from utils.streaming_outlier_loss_fixed import StreamingOutlierTracker, create_streaming_tracker
+from src.training.quant_linear import QuantizeLinear
+from src.utils.streaming_outlier_loss_fixed import StreamingOutlierTracker, create_streaming_tracker
 
 
 logger = logging.get_logger(__name__)

@@ -10,8 +10,8 @@ import os
 # Add paths for imports
 sys.path.append('/data/jypark/PrefixQuant10')
 
-from train_utils.modeling_llama_CKKS import LlamaForCausalLM, LlamaConfig
-from utils.attribute_noise_injector import AttributeNoiseInjector, NoiseConfig, NoiseType
+from src.training.modeling_llama_CKKS import LlamaForCausalLM, LlamaConfig
+from src.utils.attribute_noise_injector import AttributeNoiseInjector, NoiseConfig, NoiseType
 
 def test_noise_injection_setup():
     """Test that noise injection setup works correctly."""

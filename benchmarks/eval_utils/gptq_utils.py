@@ -18,7 +18,7 @@ import torch
 import torch.nn as nn
 import tqdm
 
-from utils import quant_utils, utils
+from src.utils import quant_utils, utils
 
 
 class GPTQ:

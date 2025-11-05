@@ -13,11 +13,11 @@ import torch
 import torch.distributed as dist
 from transformers import LlamaTokenizerFast
 import transformers
-from eval_utils.main import rotate_model, hadamard_input_projections_model
-from eval_utils.modeling_llama import LlamaForCausalLM
-from utils import data_utils, eval_utils, utils
-from utils.process_args import process_args_ptq
-from utils.range_utils import (
+from benchmarks.eval_utils.main import rotate_model, hadamard_input_projections_model
+from benchmarks.eval_utils.modeling_llama import LlamaForCausalLM
+from src.utils import data_utils, eval_utils, utils
+from src.utils.process_args import process_args_ptq
+from src.utils.range_utils import (
     OutlierStatsCollector,
     log_outlier_stats,
     RangeCollector,

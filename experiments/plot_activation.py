@@ -2,16 +2,16 @@ import torch
 import torch.nn as nn
 import os
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from eval_utils.modeling_llama import LlamaForCausalLM
+from benchmarks.eval_utils.modeling_llama import LlamaForCausalLM
 import os
-from utils.data_utils import get_loaders
+from src.utils.data_utils import get_loaders
 import argparse
-import utils.hadamard_utils as hadamard_utils
-from quantize.int_linear_fake import QuantLinear
+import src.utils.hadamard_utils as hadamard_utils
+from src.quantization.int_linear_fake import QuantLinear
 from accelerate import infer_auto_device_map, dispatch_model
-import utils.model_utils as model_utils
-import utils.rotation_utils as rotation_utils
-from utils.plot_utils import (
+import src.utils.model_utils as model_utils
+import src.utils.rotation_utils as rotation_utils
+from src.utils.plot_utils import (
     plot_3D_tensor,
     plot_layer_ax_input,
     plot_layer_ax_output,
@@ -22,7 +22,7 @@ from utils.plot_utils import (
     plot_combined_layer_ax_output,
     plot_outlier_token_number,
 )
-from utils.stat_utils import (
+from src.utils.stat_utils import (
     stat_layer_wise_magnitude_input,
     stat_layer_wise_magnitude_output,
     stat_layer_wise_outlier_token_number,
@@ -31,9 +31,9 @@ from utils.stat_utils import (
     get_nrom_and_decoder_class,
     stat_outlier_token_number,
 )
-from utils.quant_utils import wrap_to_quant_model, register_online_had
+from src.utils.quant_utils import wrap_to_quant_model, register_online_had
 import transformers
-from utils.process_args import process_args_ptq
+from src.utils.process_args import process_args_ptq
 
 
 

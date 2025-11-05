@@ -4,18 +4,18 @@ import random
 import numpy as np
 import torch
 import time
-from utils.data_utils import test_ppl
-from utils.data_utils import get_loaders
-from quantize.block_ap import block_ap
+from src.utils.data_utils import test_ppl
+from src.utils.data_utils import get_loaders
+from src.quantization.core.block_ap import block_ap
 from pathlib import Path
 from transformers import AutoTokenizer, AutoConfig, AutoModelForCausalLM
-from quantize.int_linear_real import load_quantized_model
+from src.quantization.linear.int_linear_real import load_quantized_model
 from accelerate import infer_auto_device_map, dispatch_model
 from accelerate.hooks import remove_hook_from_module
-from utils.quant_utils import wrap_to_quant_model, init_weight_quantizer, init_input_quantizer, register_online_had, get_act_stat, init_k_quantizer, init_v_quantizer,get_quant_config,check_quantizer
-from utils import train_utils
-import utils.model_utils as model_utils
-import utils.rotation_utils as rotation_utils
+from src.utils.quant_utils import wrap_to_quant_model, init_weight_quantizer, init_input_quantizer, register_online_had, get_act_stat, init_k_quantizer, init_v_quantizer,get_quant_config,check_quantizer
+from src.utils import train_utils
+import src.utils.model_utils as model_utils
+import src.utils.rotation_utils as rotation_utils
 torch.backends.cudnn.benchmark = True
 
 @torch.no_grad()

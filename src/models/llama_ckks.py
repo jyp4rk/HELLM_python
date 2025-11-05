@@ -51,9 +51,9 @@ from transformers.utils import (
 from transformers.models.llama.configuration_llama import LlamaConfig
 
 # from train_utils.quant_linear import QuantizeLinear
-from utils.streaming_outlier_loss_fixed import StreamingOutlierTracker, create_streaming_tracker
-from train_utils.noisy_linear import NoisyLinear
-from utils.attribute_noise_injector import AttributeNoiseInjector, NoiseConfig, NoiseType
+from src.utils.streaming_outlier_loss_fixed import StreamingOutlierTracker, create_streaming_tracker
+from src.models.components.noisy_linear import NoisyLinear
+from src.utils.attribute_noise_injector import AttributeNoiseInjector, NoiseConfig, NoiseType
 logger = logging.get_logger(__name__)
 
 _CONFIG_FOR_DOC = "LlamaConfig"

@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from utils.hadamard_utils import random_hadamard_matrix
+from src.utils.hadamard_utils import random_hadamard_matrix
 
 
 CLIPMIN = 1e-4

@@ -13,12 +13,12 @@ import math
 import torch
 import tqdm
 
-from utils import quant_utils, utils
-from utils.hadamard_utils import (
+from src.utils import quant_utils, utils
+from src.utils.hadamard_utils import (
     apply_exact_had_to_linear,
     is_pow2,
 )
-from utils.utils import HadamardTransform
+from src.utils.utils import HadamardTransform
 
 
 def R4_rotate_down_proj_weights(layer):

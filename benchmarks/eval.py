@@ -3,15 +3,15 @@ import sys
 import random
 import numpy as np
 import torch
-import utils
+import src.utils
 from pathlib import Path
 from transformers import AutoTokenizer, AutoConfig, AutoModelForCausalLM
 from accelerate import infer_auto_device_map
-from utils.quant_utils import wrap_to_quant_model, init_weight_quantizer, init_input_quantizer, register_online_had, init_k_quantizer, init_v_quantizer
-import utils.model_utils as model_utils
-import utils.rotation_utils as rotation_utils
+from src.utils.quant_utils import wrap_to_quant_model, init_weight_quantizer, init_input_quantizer, register_online_had, init_k_quantizer, init_v_quantizer
+import src.utils.model_utils as model_utils
+import src.utils.rotation_utils as rotation_utils
 from main import evaluate
-from utils.train_utils import load_json_as_namespace,create_logger
+from src.utils.train_utils import load_json_as_namespace,create_logger
 from accelerate import init_empty_weights, infer_auto_device_map, load_checkpoint_in_model
 
 

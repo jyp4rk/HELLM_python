@@ -1,22 +1,22 @@
 import torch
 import torch.nn as nn
-import quantize.int_linear_fake as int_linear_fake
-import quantize.int_linear_real as int_linear_real
-from quantize.recon_loss import get_recon_loss
+import src.quantization.linear.int_linear_fake as int_linear_fake
+import src.quantization.linear.int_linear_real as int_linear_real
+from src.quantization.losses.recon_loss import get_recon_loss
 
 from torch.optim.lr_scheduler import CosineAnnealingLR
 import math
 import gc
-from utils.quant_utils import (
+from src.utils.quant_utils import (
     quant_parameters,weight_parameters,trainable_parameters,
     set_quant_state,quant_inplace,set_quant_parameters,
     set_weight_parameters,trainable_parameters_num,get_named_linears,set_op_by_name,
     mse_init)
 import time
-from utils.train_utils import NativeScalerWithGradNormCount
-from utils.data_utils import BlockTrainDataset, copy_block_dataset
+from src.utils.train_utils import NativeScalerWithGradNormCount
+from src.utils.data_utils import BlockTrainDataset, copy_block_dataset
 from contextlib import nullcontext
-from utils.model_utils import get_kv_cache, mv_kv_cache
+from src.utils.model_utils import get_kv_cache, mv_kv_cache
 
 
 @torch.no_grad()

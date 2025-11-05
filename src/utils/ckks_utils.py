@@ -1,21 +1,21 @@
 from collections import OrderedDict
-from quantize.int_linear_fake import QuantLinear
-import quantize.int_linear_fake as int_linear_fake
-from quantize.quant_norm import QuantRMSNorm
-from utils.model_utils import RMSN, get_kv_cache
-import utils.rotation_utils as rotation_utils
-from utils.rotation_utils import QKRotationWrapper
+from src.quantization.int_linear_fake import QuantLinear
+import src.quantization.int_linear_fake as int_linear_fake
+from src.quantization.quant_norm import QuantRMSNorm
+from src.utils.model_utils import RMSN, get_kv_cache
+import src.utils.rotation_utils as rotation_utils
+from src.utils.rotation_utils import QKRotationWrapper
 from transformers.models.llama.modeling_llama import LlamaRMSNorm
 import torch
 from torch import nn
 from typing import Optional
-from quantize.quantizer import UniformAffineQuantizer
-import utils.hadamard_utils as hadamard_utils
+from src.quantization.quantizer import UniformAffineQuantizer
+import src.utils.hadamard_utils as hadamard_utils
 import functools
 from tqdm import tqdm
 from transformers.models.llama.modeling_llama import repeat_kv
 import math
-from train_utils.noisy_linear import NoisyLinear
+from src.training.noisy_linear import NoisyLinear
 
 
 def get_act_stat(

@@ -1,12 +1,12 @@
 # This code is based on QuaRot(https://github.com/spcl/QuaRot/tree/main/quarot).
 # Licensed under Apache License 2.0.
 
-import utils.model_utils as model_utils
+import src.utils.model_utils as model_utils
 import torch
 import typing
-from utils.train_utils import cleanup_memory
+from src.utils.train_utils import cleanup_memory
 import tqdm, math
-from utils.hadamard_utils import random_hadamard_matrix, apply_exact_had_to_linear, is_pow2
+from src.utils.hadamard_utils import random_hadamard_matrix, apply_exact_had_to_linear, is_pow2
 from fast_hadamard_transform import hadamard_transform
 
 DEV = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')

@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from quantize.quantizer import UniformAffineQuantizer
+from src.quantization.core.quantizer import UniformAffineQuantizer
 
 class QuantRMSNorm(nn.Module):
     def __init__(self, 

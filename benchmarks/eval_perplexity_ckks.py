@@ -3,20 +3,20 @@ import numpy as np
 import torch
 from pathlib import Path
 from transformers import AutoTokenizer, LlamaConfig
-from train_utils.modeling_llama_CKKS import LlamaForCausalLMCKKS
-from eval_utils.modeling_llama import LlamaForCausalLM
-from utils.data_utils import test_ppl, get_loaders
-from utils.stat_utils import get_prefixed_tokens
-from utils.train_utils import create_logger
-import utils.rotation_utils as rotation_utils
-import utils.model_utils as model_utils
-from utils.ckks_utils import inject_noise_model
-from utils.attribute_noise_injector import (
+from src.training.modeling_llama_CKKS import LlamaForCausalLMCKKS
+from benchmarks.eval_utils.modeling_llama import LlamaForCausalLM
+from src.utils.data_utils import test_ppl, get_loaders
+from src.utils.stat_utils import get_prefixed_tokens
+from src.utils.train_utils import create_logger
+import src.utils.rotation_utils as rotation_utils
+import src.utils.model_utils as model_utils
+from src.utils.ckks_utils import inject_noise_model
+from src.utils.attribute_noise_injector import (
     NoiseConfig,
     NoiseType,
     LinearLayerNoiseConfig,
 )
-from utils.attribute_noise_injector import noise_injector
+from src.utils.attribute_noise_injector import noise_injector
 from accelerate import infer_auto_device_map, dispatch_model
 
 

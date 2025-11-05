@@ -11,8 +11,8 @@
 import torch
 import tqdm
 
-from train_utils.quant_linear import QuantizeLinear
-from utils import quant_utils, utils
+from src.training.quant_linear import QuantizeLinear
+from src.utils import quant_utils, utils
 
 
 @torch.no_grad()

@@ -24,7 +24,7 @@ import os
 # Add project root to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from train_utils.quant_linear import QuantizeLinear
+from src.training.quant_linear import QuantizeLinear
 
 logger = logging.getLogger(__name__)
 

@@ -4,12 +4,12 @@
 import torch
 import typing
 import transformers
-import utils
+import src.utils
 import os
 import logging
 from transformers.cache_utils import DynamicCache
 import sys
-from eval_utils.modeling_llama import LlamaForCausalLM as LlamaForCausalLM_custom
+from benchmarks.eval_utils.modeling_llama import LlamaForCausalLM as LlamaForCausalLM_custom
 OPT_MODEL = transformers.models.opt.modeling_opt.OPTForCausalLM
 OPT_LAYER = transformers.models.opt.modeling_opt.OPTDecoderLayer
 OPT_NORM = torch.nn.LayerNorm

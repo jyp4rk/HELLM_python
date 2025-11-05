@@ -7,8 +7,8 @@ import sys
 import os
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from utils.data_utils import get_loaders
-from utils.stat_utils import get_prefixed_tokens
+from src.utils.data_utils import get_loaders
+from src.utils.stat_utils import get_prefixed_tokens
 
 def test_q_k_up_gate_activation():
     """Test the new q_k_up_gate activation type"""

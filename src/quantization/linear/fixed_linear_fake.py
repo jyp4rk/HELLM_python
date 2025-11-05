@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from quantize.quantizer import UniformAffineQuantizer
-import utils.hadamard_utils as hadamard_utils
+from src.quantization.core.quantizer import UniformAffineQuantizer
+import src.utils.hadamard_utils as hadamard_utils
 
 class QuantLinear(nn.Module):
     """

@@ -5,7 +5,7 @@ This tests the approach similar to capture_pre_softmax pattern.
 
 import torch
 import torch.nn as nn
-from utils.attribute_noise_injector import (
+from src.utils.attribute_noise_injector import (
     AttributeNoiseInjector, NoiseConfig, NoiseType,
     create_modified_rmsnorm_forward
 )

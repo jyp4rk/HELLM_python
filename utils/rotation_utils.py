@@ -352,7 +352,7 @@ def add_qk_rotation_wrapper_after_function_call_in_forward(module, function_name
     This function adds a rotation wrapper after the output of a function call in forward.
     Only calls directly in the forward function are affected. calls by other functions called in forward are not affected.
     '''
-    import quantize.monkeypatch as monkeypatch
+    import utils.monkeypatch as monkeypatch
     import functools
     attr_name = f"{function_name}_qk_rotation_wrapper"
     assert not hasattr(module, attr_name)
